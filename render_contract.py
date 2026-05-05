@@ -966,6 +966,8 @@ TYPST_TEMPLATE = r"""
 #section("01", "Rental Period")
 «CLUB_NAME» hereby agrees to rent the Theta Xi Fraternity premises located at 2639 Durant Avenue (hereinafter referred to as the "Fraternity House") for the purpose of hosting an event on «EVENT_DATE». The rental period will commence at «START_TIME» and conclude at «END_TIME»«END_DAY_PHRASE».
 
+#subclause("1a.")[«CLUB_NAME» shall have 30 minutes following the conclusion of the rental period to clean up and vacate the Fraternity House. Should «CLUB_NAME» or any of its guests fail to vacate the premises within this window, Theta Xi Fraternity reserves the right to retain the security deposit in full.]
+
 #section("02", "Rental Fee")
 «CLUB_NAME» agrees to pay a rental fee of \$«PRICE» for the use of the Fraternity House for the event. The full rental fee is due within 2 days after the conclusion of the event. Accepted payment methods are cash, Zelle, or credit card (subject to a 3% processing surcharge). Rental fee is subject to change based on Theta Xi's Executive decision.
 
