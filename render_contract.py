@@ -983,17 +983,19 @@ Fraternity brothers are not allowed to attend the event unless they are directly
 #section("04", "Guest List and Verification")
 «CLUB_NAME» shall provide a guest list to Theta Xi Fraternity at least 5 days prior to the start of the event. Fraternity Brothers will verify a bid wristband at the door to ensure that only authorized guests gain access to the property.
 
-#subclause("4c.")[Attendance at the event shall not exceed «MAX_GUESTS» guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed 200 guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed 200 guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
+#subclause("4a.")[Attendance at the event shall not exceed «MAX_GUESTS» guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed 200 guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed 200 guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
 
-#subclause("4a.")[«CLUB_NAME» must appoint «NUM_MONITORS» Sober Monitors, based on the total number of event attendees, to ensure responsible alcohol consumption and to act as representatives of the organization in case of emergency. These individuals must be clearly identifiable and capable of managing alcohol-related situations.]
+#subclause("4b.")[«CLUB_NAME» must appoint «NUM_MONITORS» Sober Monitors, based on the total number of event attendees, to ensure responsible alcohol consumption and to act as representatives of the organization in case of emergency. These individuals must be clearly identifiable and capable of managing alcohol-related situations.]
 
-#subclause("4b.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and Members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
+#subclause("4c.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and Members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
 
 #section("05", "Use of Fraternity House Property")
 «CLUB_NAME» is hereby granted permission to utilize designated amenities within the Fraternity House for the duration of their event. This includes access to lighting systems, audio speakers, tables, and couches. It is understood that «CLUB_NAME» is responsible for the respectful use of these amenities.
 
+#subclause("5a.")[«CLUB_NAME» shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, «CLUB_NAME» shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
+
 #section("06", "Damages and Security Deposit")
-If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$«DEPOSIT» security deposit provided by «CLUB_NAME». If the cost of repairs or replacement exceeds \$«DEPOSIT», «CLUB_NAME». agrees to cover the additional expenses.
+If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$«DEPOSIT» security deposit provided by «CLUB_NAME». If the cost of repairs or replacement exceeds \$«DEPOSIT», «CLUB_NAME» agrees to cover the additional expenses.
 
 #subclause("6a.")[«CLUB_NAME» acknowledges and agrees that Theta Xi Fraternity, its officers, and members, shall not be liable for any injuries, damages, or losses that may occur to any party, or guest during the event. «CLUB_NAME» further agrees to bear all costs associated with such emergency services and Theta Xi Fraternity will not be held accountable for any claims, damages, or expenses arising out of or in connection with the use of such services.]
 
