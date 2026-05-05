@@ -17,6 +17,7 @@ CLI_ARGS = [
     "--end-time",    "02:00",
     "--price",       "1500",
     "--deposit",     "100",
+    "--max-guests",  "150",
     "--monitors",    "4",
     "--no-sign",
 ]
@@ -24,7 +25,7 @@ CLI_OUT = HERE / "test_cli_nextday.pdf"
 
 # --- Interactive test: same-day event (18:00 → 22:00, auto-detected) --------
 # Answers in field order: club_name, date, start_time, end_time, price,
-# deposit, monitors — then sign prompt.
+# deposit, max_guests, monitors — then sign prompt.
 INTERACTIVE_INPUT = "\n".join([
     "Test Club Interactive",
     "June 1, 2026",
@@ -32,6 +33,7 @@ INTERACTIVE_INPUT = "\n".join([
     "22:00",
     "2000",
     "150",
+    "120",
     "5",
     "n",
 ]) + "\n"

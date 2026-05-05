@@ -979,6 +979,8 @@ Fraternity brothers are not allowed to attend the event unless they are directly
 #section("04", "Guest List and Verification")
 «CLUB_NAME» shall provide a guest list to Theta Xi Fraternity at least 5 days prior to the start of the event. Fraternity Brothers will verify a bid wristband at the door to ensure that only authorized guests gain access to the property.
 
+#subclause("4c.")[Attendance at the event shall not exceed «MAX_GUESTS» guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed 200 guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed 200 guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
+
 #subclause("4a.")[«CLUB_NAME» must appoint «NUM_MONITORS» Sober Monitors, based on the total number of event attendees, to ensure responsible alcohol consumption and to act as representatives of the organization in case of emergency. These individuals must be clearly identifiable and capable of managing alcohol-related situations.]
 
 #subclause("4b.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and Members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
@@ -1082,6 +1084,7 @@ FIELDS = [
     ("end_time",   "«END_TIME»",     "End time (24-hour)",           "e.g. 02:00"),
     ("price",      "«PRICE»",        "Rental fee in USD (no $)",     "e.g. 1500"),
     ("deposit",    "«DEPOSIT»",      "Security deposit in USD (no $)", "e.g. 100"),
+    ("max_guests", "«MAX_GUESTS»",   "Maximum number of guests",     "e.g. 150"),
     ("monitors",   "«NUM_MONITORS»", "Number of sober monitors",     "e.g. 4"),
 ]
 
@@ -1162,6 +1165,7 @@ def main() -> None:
     )
     ap.add_argument("--price",      help="Rental fee in USD, no $ sign (e.g. '1500')")
     ap.add_argument("--deposit",    help="Security deposit in USD, no $ sign (e.g. '100')")
+    ap.add_argument("--max-guests", help="Maximum number of guests (e.g. '150')")
     ap.add_argument("--monitors",   help="Number of sober monitors (e.g. '4')")
     ap.add_argument(
         "--sign", action=argparse.BooleanOptionalAction, default=None,
