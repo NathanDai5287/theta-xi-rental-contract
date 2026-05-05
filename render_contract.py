@@ -14,8 +14,12 @@ Two ways to use it:
           --start-time 22:00 \\
           --end-time 02:00 \\
           --price 1500 \\
+          --deposit 100 \\
           --monitors 4 \\
           --output theta_xi_contract.pdf
+
+  If the event ends on the same day, add --same-day:
+      python render_contract.py ... --same-day --end-time 23:00
 
   Auto-sign your side (uses today's date):
       python render_contract.py ... --sign
@@ -960,10 +964,10 @@ TYPST_TEMPLATE = r"""
 // ===================== BODY ==========================================
 
 #section("01", "Rental Period")
-«CLUB_NAME» hereby agrees to rent the Theta Xi Fraternity premises located at 2639 Durant Avenue (hereinafter referred to as the "Fraternity House") for the purpose of hosting an event on «EVENT_DATE». The rental period will commence at «START_TIME» and conclude at «END_TIME» on the following day.
+«CLUB_NAME» hereby agrees to rent the Theta Xi Fraternity premises located at 2639 Durant Avenue (hereinafter referred to as the "Fraternity House") for the purpose of hosting an event on «EVENT_DATE». The rental period will commence at «START_TIME» and conclude at «END_TIME»«END_DAY_PHRASE».
 
 #section("02", "Rental Fee")
-«CLUB_NAME» agrees to pay a rental fee of \$«PRICE» for the use of the Fraternity House for the event. «CLUB_NAME» shall provide a security deposit of \$100, due in full before the event start time. The full rental fee of \$«PRICE» is due within 2 days after the event; upon receipt of the full rental fee, Theta Xi will return the \$100 security deposit to «CLUB_NAME», subject to the conditions specified in this Agreement. The security deposit may not be applied toward the rental fee, and «CLUB_NAME» may not remit only the difference. Rental fee is subject to change based on Theta Xi's Executive decision.
+«CLUB_NAME» agrees to pay a rental fee of \$«PRICE» for the use of the Fraternity House for the event. «CLUB_NAME» shall provide a security deposit of \$«DEPOSIT», due in full before the event start time. The full rental fee of \$«PRICE» is due within 2 days after the event; upon receipt of the full rental fee, Theta Xi will return the \$«DEPOSIT» security deposit to «CLUB_NAME», subject to the conditions specified in this Agreement. The security deposit may not be applied toward the rental fee, and «CLUB_NAME» may not remit only the difference. Rental fee is subject to change based on Theta Xi's Executive decision.
 
 #section("03", "Attendance Restrictions")
 Fraternity brothers are not allowed to attend the event unless they are directly affiliated with «CLUB_NAME» or have been invited by «CLUB_NAME» representatives. The Fraternity shall respect and uphold this condition to ensure a secure and private event for «CLUB_NAME».
@@ -979,7 +983,7 @@ Fraternity brothers are not allowed to attend the event unless they are directly
 «CLUB_NAME» is hereby granted permission to utilize designated amenities within the Fraternity House for the duration of their event. This includes access to lighting systems, audio speakers, tables, and couches. It is understood that «CLUB_NAME» is responsible for the respectful use of these amenities.
 
 #section("06", "Damages and Security Deposit")
-If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$100 security deposit provided by «CLUB_NAME». If the cost of repairs or replacement exceeds \$100, «CLUB_NAME». agrees to cover the additional expenses.
+If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$«DEPOSIT» security deposit provided by «CLUB_NAME». If the cost of repairs or replacement exceeds \$«DEPOSIT», «CLUB_NAME». agrees to cover the additional expenses.
 
 #subclause("6a.")[«CLUB_NAME» acknowledges and agrees that Theta Xi Fraternity, its officers, and members, shall not be liable for any injuries, damages, or losses that may occur to any party, or guest during the event. «CLUB_NAME» further agrees to bear all costs associated with such emergency services and Theta Xi Fraternity will not be held accountable for any claims, damages, or expenses arising out of or in connection with the use of such services.]
 
@@ -987,7 +991,7 @@ If any furniture or house property belonging to Theta Xi Fraternity is damaged, 
 In the event that excessive waste is not properly disposed of by «CLUB_NAME», following the conclusion of their event, such negligence will be classified under 'Damage to Property.' Theta Xi reserves the right to assess and impose necessary charges for the cleanup and disposal of this waste.
 
 #section("08", "Restricted Areas")
-«CLUB_NAME» members are not allowed in restricted areas of the Fraternity House. Access to these areas is strictly prohibited. If «CLUB_NAME» members violate this provision, the \$100 security deposit will be forfeited.
+«CLUB_NAME» members are not allowed in restricted areas of the Fraternity House. Access to these areas is strictly prohibited. If «CLUB_NAME» members violate this provision, the \$«DEPOSIT» security deposit will be forfeited.
 
 #section("09", "Termination of Agreement")
 In the event of a breach of any of the terms and conditions outlined in this Agreement, Theta Xi Fraternity reserves the right to terminate the rental agreement, remove «CLUB_NAME» from the premises, and retain the security deposit.
@@ -1071,8 +1075,9 @@ FIELDS = [
     ("club_name",  "«CLUB_NAME»",    "Club name",                    "e.g. Pi Sigma Delta"),
     ("date",       "«EVENT_DATE»",   "Event date",                   "e.g. March 15, 2026"),
     ("start_time", "«START_TIME»",   "Start time (24-hour)",         "e.g. 22:00"),
-    ("end_time",   "«END_TIME»",     "End time, next day (24-hour)", "e.g. 02:00"),
+    ("end_time",   "«END_TIME»",     "End time (24-hour)",           "e.g. 02:00"),
     ("price",      "«PRICE»",        "Rental fee in USD (no $)",     "e.g. 1500"),
+    ("deposit",    "«DEPOSIT»",      "Security deposit in USD (no $)", "e.g. 100"),
     ("monitors",   "«NUM_MONITORS»", "Number of sober monitors",     "e.g. 4"),
 ]
 
@@ -1145,8 +1150,11 @@ def main() -> None:
     ap.add_argument("--club-name",  help="Renting club name")
     ap.add_argument("--date",       help="Event date (e.g. 'March 15, 2026')")
     ap.add_argument("--start-time", help="Start time, 24-hour (e.g. '22:00')")
-    ap.add_argument("--end-time",   help="End time next day, 24-hour (e.g. '02:00')")
+    ap.add_argument("--end-time",   help="End time, 24-hour (e.g. '02:00')")
+    ap.add_argument("--same-day",   action="store_true", default=False,
+                    help="event ends on the same day (omits 'on the following day')")
     ap.add_argument("--price",      help="Rental fee in USD, no $ sign (e.g. '1500')")
+    ap.add_argument("--deposit",    help="Security deposit in USD, no $ sign (e.g. '100')")
     ap.add_argument("--monitors",   help="Number of sober monitors (e.g. '4')")
     ap.add_argument(
         "--sign", action=argparse.BooleanOptionalAction, default=None,
@@ -1188,6 +1196,10 @@ def main() -> None:
     src = TYPST_TEMPLATE
     for name, placeholder, *_ in FIELDS:
         src = src.replace(placeholder, values[name])
+
+    # Same-day / next-day phrase
+    end_day_phrase = "" if args.same_day else " on the following day"
+    src = src.replace("«END_DAY_PHRASE»", end_day_phrase)
 
     # Auto-sign substitution
     if sign:
