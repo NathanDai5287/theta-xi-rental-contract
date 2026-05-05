@@ -908,7 +908,7 @@ TYPST_TEMPLATE = r"""
 // ---- Section heading: numeral in brand color + title + thin rule ----
 #let section(num, title) = {
   v(20pt, weak: true)
-  block(below: 8pt)[
+  block(sticky: true)[
     #grid(
       columns: (auto, 1fr),
       column-gutter: 14pt,
@@ -922,9 +922,10 @@ TYPST_TEMPLATE = r"""
         #title
       ],
     )
+    #v(8pt, weak: true)
+    #line(length: 100%, stroke: 0.4pt + rule)
+    #v(6pt, weak: true)
   ]
-  line(length: 100%, stroke: 0.4pt + rule)
-  v(6pt, weak: true)
 }
 
 // ---- Sub-clauses (4a / 4b / 6a) -------------------------------------
