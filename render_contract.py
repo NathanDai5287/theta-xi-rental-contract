@@ -1151,8 +1151,11 @@ def main() -> None:
     ap.add_argument("--date",       help="Event date (e.g. 'March 15, 2026')")
     ap.add_argument("--start-time", help="Start time, 24-hour (e.g. '22:00')")
     ap.add_argument("--end-time",   help="End time, 24-hour (e.g. '02:00')")
-    ap.add_argument("--same-day",   action="store_true", default=False,
-                    help="event ends on the same day (omits 'on the following day')")
+    ap.add_argument(
+        "--same-day", action=argparse.BooleanOptionalAction, default=None,
+        help="event ends on the same day (omits 'on the following day'); "
+             "if omitted, you'll be prompted",
+    )
     ap.add_argument("--price",      help="Rental fee in USD, no $ sign (e.g. '1500')")
     ap.add_argument("--deposit",    help="Security deposit in USD, no $ sign (e.g. '100')")
     ap.add_argument("--monitors",   help="Number of sober monitors (e.g. '4')")
@@ -1188,6 +1191,11 @@ def main() -> None:
         if values[name] is None:
             values[name] = prompt(label, hint)
 
+    # If --same-day / --no-same-day wasn't given on the CLI, ask interactively
+    same_day = args.same_day
+    if same_day is None:
+        same_day = prompt_yn("Does the event end on the same day (not the following day)?", default=False)
+
     # If --sign / --no-sign wasn't given on the CLI, ask interactively
     sign = args.sign
     if sign is None:
@@ -1198,7 +1206,7 @@ def main() -> None:
         src = src.replace(placeholder, values[name])
 
     # Same-day / next-day phrase
-    end_day_phrase = "" if args.same_day else " on the following day"
+    end_day_phrase = "" if same_day else " on the following day"
     src = src.replace("«END_DAY_PHRASE»", end_day_phrase)
 
     # Auto-sign substitution
