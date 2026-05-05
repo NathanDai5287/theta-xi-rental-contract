@@ -969,9 +969,11 @@ TYPST_TEMPLATE = r"""
 #section("02", "Rental Fee")
 «CLUB_NAME» agrees to pay a rental fee of \$«PRICE» for the use of the Fraternity House for the event. The full rental fee is due within 2 days after the conclusion of the event. Accepted payment methods are cash, Zelle, or credit card (subject to a 3% processing surcharge). Rental fee is subject to change based on Theta Xi's Executive decision.
 
-#subclause("2a.")[«CLUB_NAME» shall provide a security deposit of \$«DEPOSIT», due in full before the event start time. Upon receipt of the full rental fee, Theta Xi will return the \$«DEPOSIT» security deposit to «CLUB_NAME», subject to the conditions specified in this Agreement. The security deposit may not be applied toward the rental fee, and «CLUB_NAME» may not remit only the difference. Should the rental fee not be received within 2 days after the event, Theta Xi Fraternity reserves the right to retain the security deposit.]
+#subclause("2a.")[«CLUB_NAME» shall provide a security deposit of \$«DEPOSIT», due in full before the event start time. Upon receipt of the full rental fee, Theta Xi will return the \$«DEPOSIT» security deposit to «CLUB_NAME», subject to the conditions specified in this Agreement. The security deposit is a separate obligation from the rental fee; any forfeiture or retention of the security deposit by Theta Xi Fraternity does not reduce or offset the rental fee owed by «CLUB_NAME». Partial payment of the rental fee does not constitute settlement — the full rental fee remains due regardless of any amount remitted. Should the rental fee not be received within 2 days after the event, Theta Xi Fraternity reserves the right to retain the security deposit.]
 
 #subclause("2b.")[If either party cancels this Agreement prior to the event, no cancellation fee will be assessed. Any security deposit already paid by «CLUB_NAME» will be returned in full.]
+
+#subclause("2c.")[Should Theta Xi Fraternity be required to pursue collection of any outstanding balance under this Agreement, «CLUB_NAME» shall be liable for all reasonable costs incurred in doing so, including but not limited to court filing fees and collection fees.]
 
 #section("03", "Attendance Restrictions")
 Fraternity brothers are not allowed to attend the event unless they are directly affiliated with «CLUB_NAME» or have been invited by «CLUB_NAME» representatives. The Fraternity shall respect and uphold this condition to ensure a secure and private event for «CLUB_NAME».
