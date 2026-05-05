@@ -18,8 +18,8 @@ Two ways to use it:
           --monitors 4 \\
           --output theta_xi_contract.pdf
 
-  If the event ends on the same day, add --same-day:
-      python render_contract.py ... --same-day --end-time 23:00
+  Same-day vs next-day is auto-detected from the times (end after start →
+  same day). Override with --same-day or --no-same-day if needed.
 
   Auto-sign your side (uses today's date):
       python render_contract.py ... --sign
@@ -1153,8 +1153,8 @@ def main() -> None:
     ap.add_argument("--end-time",   help="End time, 24-hour (e.g. '02:00')")
     ap.add_argument(
         "--same-day", action=argparse.BooleanOptionalAction, default=None,
-        help="event ends on the same day (omits 'on the following day'); "
-             "if omitted, you'll be prompted",
+        help="override same-day detection (default: inferred — end time after start "
+             "time means same day, before means next day)",
     )
     ap.add_argument("--price",      help="Rental fee in USD, no $ sign (e.g. '1500')")
     ap.add_argument("--deposit",    help="Security deposit in USD, no $ sign (e.g. '100')")
@@ -1191,10 +1191,14 @@ def main() -> None:
         if values[name] is None:
             values[name] = prompt(label, hint)
 
-    # If --same-day / --no-same-day wasn't given on the CLI, ask interactively
+    # Determine same-day: explicit flag overrides; otherwise infer from times.
+    # End time numerically after start time → same day; before (crosses midnight) → next day.
     same_day = args.same_day
     if same_day is None:
-        same_day = prompt_yn("Does the event end on the same day (not the following day)?", default=False)
+        def _hhmm(s: str) -> tuple[int, int]:
+            h, m = s.split(":")
+            return int(h), int(m)
+        same_day = _hhmm(values["end_time"]) > _hhmm(values["start_time"])
 
     # If --sign / --no-sign wasn't given on the CLI, ask interactively
     sign = args.sign
