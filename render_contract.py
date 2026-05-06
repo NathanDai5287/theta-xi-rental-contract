@@ -964,8 +964,8 @@ TYPST_TEMPLATE = r"""
 #section("03", "Attendance Restrictions")
 Fraternity brothers are not allowed to attend the event unless they are directly affiliated with «CLUB_NAME» or have been invited by «CLUB_NAME» representatives. The Fraternity shall respect and uphold this condition to ensure a secure and private event for «CLUB_NAME».
 
-#section("04", "Guest List and Verification")
-«CLUB_NAME» shall provide a guest list to Theta Xi Fraternity at least 5 days prior to the start of the event. Fraternity Brothers will verify a bid wristband at the door to ensure that only authorized guests gain access to the property.
+#section("04", "Guest Authorization")
+«CLUB_NAME» is solely responsible for managing and verifying guest access to the event. «CLUB_NAME» shall ensure that only authorized guests are admitted to the Fraternity House. «GUEST_LIST_SENTENCE»Any damages, incidents, or liabilities arising from the conduct of admitted guests are the full responsibility of «CLUB_NAME».
 
 #subclause("4a.")[Attendance at the event shall not exceed «MAX_GUESTS» guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed 200 guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed 200 guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
 
@@ -1193,8 +1193,9 @@ def main() -> None:
         )
 
     print()
-    speakers = prompt_yn("Include speakers + setup amenity?")
-    sign     = prompt_yn("Auto-sign the Theta Xi side with today's date?", default=False)
+    guest_list = prompt_yn("Require guest list 5 days in advance?")
+    speakers   = prompt_yn("Include speakers + setup amenity?")
+    sign       = prompt_yn("Auto-sign the Theta Xi side with today's date?", default=False)
 
     src = TYPST_TEMPLATE
     for name, placeholder, *_ in FIELDS:
@@ -1202,6 +1203,14 @@ def main() -> None:
 
     end_day_phrase = "" if same_day else " on the following day"
     src = src.replace("«END_DAY_PHRASE»", end_day_phrase)
+
+    # Guest list sentence (conditional)
+    guest_list_sentence = (
+        f"{values['club_name']} shall provide a guest list to Theta Xi Fraternity "
+        "at least 5 days prior to the start of the event. "
+        if guest_list else ""
+    )
+    src = src.replace("«GUEST_LIST_SENTENCE»", guest_list_sentence)
 
     # Speakers amenity phrase inserted into Section 05 body
     speakers_amenity = (
