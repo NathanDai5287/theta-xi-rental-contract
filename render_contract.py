@@ -2,27 +2,11 @@
 """
 render_contract.py — render the Theta Xi Hosting Contract to a PDF.
 
-Two ways to use it:
+Run interactively:
+    python render_contract.py
 
-  Interactive:
-      python render_contract.py
-
-  CLI flags (any subset; missing fields are prompted for):
-      python render_contract.py \\
-          --club-name "Pi Sigma Delta" \\
-          --date "March 15, 2026" \\
-          --start-time 22:00 \\
-          --end-time 02:00 \\
-          --price 1500 \\
-          --deposit 100 \\
-          --monitors 4 \\
-          --output theta_xi_contract.pdf
-
-  Same-day vs next-day is auto-detected from the times (end after start →
-  same day). Override with --same-day or --no-same-day if needed.
-
-  Auto-sign your side (uses today's date):
-      python render_contract.py ... --sign
+Same-day vs next-day is auto-detected from the times (end after start →
+same day, otherwise next day).
 
 Requires the `typst` binary on PATH:
     macOS    brew install typst
@@ -33,7 +17,6 @@ Requires the `typst` binary on PATH:
 No Python package dependencies — stdlib only. The shield logo and signature
 are embedded as base64 below and unpacked at render time.
 """
-import argparse
 import base64
 import datetime
 import shutil
@@ -991,9 +974,11 @@ Fraternity brothers are not allowed to attend the event unless they are directly
 #subclause("4c.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and Members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
 
 #section("05", "Use of Fraternity House Property")
-«CLUB_NAME» is hereby granted permission to utilize designated amenities within the Fraternity House for the duration of their event. This includes access to lighting systems, audio speakers, tables, and couches. It is understood that «CLUB_NAME» is responsible for the respectful use of these amenities.
+«CLUB_NAME» is hereby granted permission to utilize designated amenities within the Fraternity House for the duration of their event. This includes access to lighting systems«SPEAKERS_AMENITY». It is understood that «CLUB_NAME» is responsible for the respectful use of these amenities.
 
 #subclause("5a.")[«CLUB_NAME» shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, «CLUB_NAME» shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
+
+«SPACE_CLEARING_SUBCLAUSE»
 
 #section("06", "Damages and Security Deposit")
 If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$«DEPOSIT» security deposit provided by «CLUB_NAME». If the cost of repairs or replacement exceeds \$«DEPOSIT», «CLUB_NAME» agrees to cover the additional expenses.
@@ -1004,7 +989,7 @@ If any furniture or house property belonging to Theta Xi Fraternity is damaged, 
 In the event that excessive waste is not properly disposed of by «CLUB_NAME», following the conclusion of their event, such negligence will be classified under 'Damage to Property.' Theta Xi reserves the right to assess and impose necessary charges for the cleanup and disposal of this waste.
 
 #section("08", "Restricted Areas")
-«CLUB_NAME» members are not allowed in restricted areas of the Fraternity House. Access to these areas is strictly prohibited. If «CLUB_NAME» members violate this provision, the \$«DEPOSIT» security deposit will be forfeited.
+Guests of «CLUB_NAME» are permitted to access the following designated areas of the Fraternity House during the event: «ALLOWED_AREAS_LIST». Upstairs areas of the Fraternity House are strictly prohibited at all times. All other areas not listed above may only be entered when accompanied by a member of Theta Xi Fraternity. Any unauthorized access to restricted or prohibited areas will result in forfeiture of the \$«DEPOSIT» security deposit.
 
 #section("09", "Termination of Agreement")
 In the event of a breach of any of the terms and conditions outlined in this Agreement, Theta Xi Fraternity reserves the right to terminate the rental agreement, remove «CLUB_NAME» from the premises, and retain the security deposit.
@@ -1095,6 +1080,20 @@ FIELDS = [
     ("monitors",   "«NUM_MONITORS»", "Number of sober monitors",     "e.g. 4"),
 ]
 
+# Areas guests may access (order controls display order in the contract).
+AREA_LABELS: dict[str, str] = {
+    "living_room": "Living Room",
+    "dining_room": "Dining Room",
+    "backyard":    "Backyard",
+}
+
+# What Theta Xi moves when clearing each space (used in the restoration subclause).
+AREA_CLEARING_DESC: dict[str, str] = {
+    "living_room": "the couches, tables, and carpet",
+    "dining_room": "the dining table and chairs",
+    "backyard":    "everything off the cement area in the center",
+}
+
 
 def _slug(s: str) -> str:
     s = s.strip().lower().replace(" ", "_")
@@ -1155,92 +1154,98 @@ def find_typst() -> str:
     )
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Render the Theta Xi Hosting Contract to PDF.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Any flags you omit will be prompted for interactively.",
-    )
-    ap.add_argument("--club-name",  help="Renting club name")
-    ap.add_argument("--date",       help="Event date (e.g. 'March 15, 2026')")
-    ap.add_argument("--start-time", help="Start time, 24-hour (e.g. '22:00')")
-    ap.add_argument("--end-time",   help="End time, 24-hour (e.g. '02:00')")
-    ap.add_argument(
-        "--same-day", action=argparse.BooleanOptionalAction, default=None,
-        help="override same-day detection (default: inferred — end time after start "
-             "time means same day, before means next day)",
-    )
-    ap.add_argument("--price",      help="Rental fee in USD, no $ sign (e.g. '1500')")
-    ap.add_argument("--deposit",    help="Security deposit in USD, no $ sign (e.g. '100')")
-    ap.add_argument("--max-guests", help="Maximum number of guests (e.g. '150')")
-    ap.add_argument("--monitors",   help="Number of sober monitors (e.g. '4')")
-    ap.add_argument(
-        "--sign", action=argparse.BooleanOptionalAction, default=None,
-        help="auto-sign the Theta Xi side with the embedded signature and today's date "
-             "(if neither --sign nor --no-sign is given, you'll be prompted)",
-    )
-    ap.add_argument(
-        "--sign-date",
-        help="override the auto-sign date (e.g. 'May 4, 2026'); defaults to today",
-    )
-    ap.add_argument(
-        "-o", "--output",
-        default=None,
-        help=(
-            "output PDF path (default: theta_xi_<club>_contract.pdf; generated from --club-name; "
-            "lowercase, no spaces)"
-        ),
-    )
-    ap.add_argument(
-        "--keep-source", action="store_true",
-        help="also write the rendered .typ source and assets next to the PDF",
-    )
-    args = ap.parse_args()
+def _english_list(items: list[str], article: str = "the") -> str:
+    if not items:
+        return "no designated areas"
+    prefixed = [f"{article} {item}" for item in items]
+    if len(prefixed) == 1:
+        return prefixed[0]
+    if len(prefixed) == 2:
+        return f"{prefixed[0]} and {prefixed[1]}"
+    return ", ".join(prefixed[:-1]) + f", and {prefixed[-1]}"
 
+
+def main() -> None:
     typst_bin = find_typst()
 
-    values = {name: getattr(args, name) for name, *_ in FIELDS}
-    if any(v is None for v in values.values()):
-        print("Theta Xi Hosting Contract — fill in the missing fields:")
+    print("Theta Xi Hosting Contract — fill in the fields below:")
+    values: dict[str, str] = {}
     for name, _placeholder, label, hint in FIELDS:
-        if values[name] is None:
-            values[name] = prompt(label, hint)
+        values[name] = prompt(label, hint)
 
-    # Determine same-day: explicit flag overrides; otherwise infer from times.
-    # End time numerically after start time → same day; before (crosses midnight) → next day.
-    same_day = args.same_day
-    if same_day is None:
-        def _hhmm(s: str) -> tuple[int, int]:
-            h, m = s.split(":")
-            return int(h), int(m)
-        same_day = _hhmm(values["end_time"]) > _hhmm(values["start_time"])
+    def _hhmm(s: str) -> tuple[int, int]:
+        h, m = s.split(":")
+        return int(h), int(m)
+    same_day = _hhmm(values["end_time"]) > _hhmm(values["start_time"])
 
-    # If --sign / --no-sign wasn't given on the CLI, ask interactively
-    sign = args.sign
-    if sign is None:
-        sign = prompt_yn("Auto-sign the Theta Xi side with the embedded signature?", default=False)
+    print("\nAllowed areas — toggle which spaces guests may access:")
+    areas: list[str] = []
+    for key, label in AREA_LABELS.items():
+        if prompt_yn(f"  Include {label}?"):
+            areas.append(key)
+
+    cleared: dict[str, bool] = {}
+    for key in areas:
+        desc = AREA_CLEARING_DESC[key]
+        cleared[key] = prompt_yn(
+            f"  Clear {AREA_LABELS[key]} beforehand? "
+            f"(Theta Xi will move {desc})"
+        )
+
+    print()
+    speakers = prompt_yn("Include speakers + setup amenity?")
+    sign     = prompt_yn("Auto-sign the Theta Xi side with today's date?", default=False)
 
     src = TYPST_TEMPLATE
     for name, placeholder, *_ in FIELDS:
         src = src.replace(placeholder, values[name])
 
-    # Same-day / next-day phrase
     end_day_phrase = "" if same_day else " on the following day"
     src = src.replace("«END_DAY_PHRASE»", end_day_phrase)
 
-    # Auto-sign substitution
-    if sign:
-        d = (
-            args.sign_date
-            if args.sign_date
-            else (lambda t: f"{t:%B} {t.day}, {t.year}")(datetime.date.today())
+    # Speakers amenity phrase inserted into Section 05 body
+    speakers_amenity = (
+        ", and the audio speaker system (set up by Theta Xi Fraternity)"
+        if speakers else ""
+    )
+    src = src.replace("«SPEAKERS_AMENITY»", speakers_amenity)
+
+    # Allowed areas list for Section 08
+    allowed_areas_list = _english_list([AREA_LABELS[k] for k in areas])
+    src = src.replace("«ALLOWED_AREAS_LIST»", allowed_areas_list)
+
+    # Subclause 5b — furniture restoration
+    club = values["club_name"]
+    cleared_keys = [k for k in areas if cleared.get(k)]
+    if cleared_keys:
+        cleared_desc = "; ".join(
+            f"the {AREA_LABELS[k]} (Theta Xi will move {AREA_CLEARING_DESC[k]})"
+            for k in cleared_keys
         )
+        subclause_5b = (
+            f'#subclause("5b.")[For the following areas, Theta Xi Fraternity has agreed to '
+            f'clear items prior to the event and will restore them to their original positions '
+            f'following the event: {cleared_desc}. In all other accessible areas, any furniture '
+            f'or items moved by {club} or its guests during the event must be returned to their '
+            f'original positions before the conclusion of the rental period. Failure to restore '
+            f'moved items will be treated as damage under Section 06.]'
+        )
+    else:
+        subclause_5b = (
+            f'#subclause("5b.")[Any furniture or items moved by {club} or its guests during '
+            f'the event must be returned to their original positions before the conclusion of '
+            f'the rental period. Failure to restore moved items will be treated as damage '
+            f'under Section 06.]'
+        )
+    src = src.replace("«SPACE_CLEARING_SUBCLAUSE»", subclause_5b)
+
+    if sign:
+        d = (lambda t: f"{t:%B} {t.day}, {t.year}")(datetime.date.today())
         src = src.replace("«IS_SIGNED»", "true").replace("«SIG_DATE»", d)
     else:
         src = src.replace("«IS_SIGNED»", "false").replace("«SIG_DATE»", "")
 
-    output_name = args.output or f"theta_xi_{_slug(values['club_name'])}_contract.pdf"
-    out_pdf = Path(output_name).resolve()
+    out_pdf = Path(f"theta_xi_{_slug(club)}_contract.pdf").resolve()
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
 
     logo_bytes = base64.b64decode(LOGO_PNG_B64)
@@ -1260,14 +1265,7 @@ def main() -> None:
             sys.stderr.write(result.stderr)
             sys.exit(f"\ntypst compile failed (exit {result.returncode})")
 
-    if args.keep_source:
-        out_pdf.with_suffix(".typ").write_text(src, encoding="utf-8")
-        (out_pdf.parent / "shield.png").write_bytes(logo_bytes)
-        (out_pdf.parent / "signature.png").write_bytes(sig_bytes)
-        print(f"wrote {out_pdf.with_suffix('.typ')}")
-        print(f"wrote {out_pdf.parent / 'shield.png'}")
-        print(f"wrote {out_pdf.parent / 'signature.png'}")
-    print(f"wrote {out_pdf}")
+    print(f"\nwrote {out_pdf}")
 
 
 if __name__ == "__main__":
