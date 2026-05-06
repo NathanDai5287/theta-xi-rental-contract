@@ -974,7 +974,7 @@ Fraternity brothers are not allowed to attend the event unless they are directly
 #subclause("4c.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and Members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
 
 #section("05", "Use of Fraternity House Property")
-«CLUB_NAME» is hereby granted permission to utilize designated amenities within the Fraternity House for the duration of their event. This includes access to lighting systems«SPEAKERS_AMENITY». It is understood that «CLUB_NAME» is responsible for the respectful use of these amenities.
+«CLUB_NAME» is hereby granted permission to utilize the Fraternity House for the duration of their event. «AMENITIES_SENTENCE»It is understood that «CLUB_NAME» is responsible for the respectful use of all property.
 
 #subclause("5a.")[«CLUB_NAME» shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, «CLUB_NAME» shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
 
@@ -986,7 +986,7 @@ If any furniture or house property belonging to Theta Xi Fraternity is damaged, 
 #subclause("6a.")[«CLUB_NAME» acknowledges and agrees that Theta Xi Fraternity, its officers, and members, shall not be liable for any injuries, damages, or losses that may occur to any party, or guest during the event. «CLUB_NAME» further agrees to bear all costs associated with such emergency services and Theta Xi Fraternity will not be held accountable for any claims, damages, or expenses arising out of or in connection with the use of such services.]
 
 #section("07", "Excessive Waste Policy")
-In the event that excessive waste is not properly disposed of by «CLUB_NAME», following the conclusion of their event, such negligence will be classified under 'Damage to Property.' Theta Xi reserves the right to assess and impose necessary charges for the cleanup and disposal of this waste.
+In the event that excessive waste is not properly disposed of by «CLUB_NAME», following the conclusion of their event, such negligence will be classified under 'Damage to Property.' Theta Xi reserves the right to assess and impose necessary charges for the cleanup and disposal of this waste. For purposes of this Agreement, cleaning obligations are limited to the disposal of trash and garbage; «CLUB_NAME» is not responsible for mopping, sweeping, or any other deep cleaning of the premises.
 
 #section("08", "Restricted Areas")
 Guests of «CLUB_NAME» are permitted to access the following designated areas of the Fraternity House during the event: «ALLOWED_AREAS_LIST». Upstairs areas of the Fraternity House are strictly prohibited at all times. All other areas not listed above may only be entered when accompanied by a member of Theta Xi Fraternity. Any unauthorized access to restricted or prohibited areas will result in forfeiture of the \$«DEPOSIT» security deposit.
@@ -1094,7 +1094,6 @@ AREA_CLEARING_DESC: dict[str, str] = {
     "backyard":    "everything off the cement area in the center",
 }
 
-
 def _slug(s: str) -> str:
     s = s.strip().lower().replace(" ", "_")
     out = []
@@ -1193,9 +1192,10 @@ def main() -> None:
         )
 
     print()
-    guest_list = prompt_yn("Require guest list 5 days in advance?")
-    speakers   = prompt_yn("Include speakers + setup amenity?")
-    sign       = prompt_yn("Auto-sign the Theta Xi side with today's date?", default=False)
+    guest_list     = prompt_yn("Require guest list 5 days in advance?")
+    sound_system   = prompt_yn("Include sound system? (Theta Xi will set up)")
+    lighting_system = prompt_yn("Include lighting system? (Theta Xi will set up)")
+    sign           = prompt_yn("Auto-sign the Theta Xi side with today's date?", default=False)
 
     src = TYPST_TEMPLATE
     for name, placeholder, *_ in FIELDS:
@@ -1212,12 +1212,18 @@ def main() -> None:
     )
     src = src.replace("«GUEST_LIST_SENTENCE»", guest_list_sentence)
 
-    # Speakers amenity phrase inserted into Section 05 body
-    speakers_amenity = (
-        ", and the audio speaker system (set up by Theta Xi Fraternity)"
-        if speakers else ""
-    )
-    src = src.replace("«SPEAKERS_AMENITY»", speakers_amenity)
+    # Amenities sentence for Section 05
+    amenity_names = []
+    if sound_system:
+        amenity_names.append("sound system")
+    if lighting_system:
+        amenity_names.append("lighting system")
+    if amenity_names:
+        amenities_list = _english_list(amenity_names, article="the")
+        amenities_sentence = f"Theta Xi Fraternity will set up {amenities_list} for the event. "
+    else:
+        amenities_sentence = ""
+    src = src.replace("«AMENITIES_SENTENCE»", amenities_sentence)
 
     # Allowed areas list for Section 08
     allowed_areas_list = _english_list([AREA_LABELS[k] for k in areas])
