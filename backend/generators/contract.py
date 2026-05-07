@@ -132,7 +132,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         repl["«FIRE_PERMIT_CLAUSE»"] = (
             f'#subclause("4d.")[As attendance is expected to exceed 50 guests, Theta Xi '
             f'Fraternity is required to obtain a special event fire permit from the City of '
-            f'Berkeley. A fee of $125.00 has been included in the rental fee to cover the '
+            f'Berkeley. A fee of \$125.00 has been included in the rental fee to cover the '
             f'cost of this permit. {base["club_name"]} agrees to comply with all '
             f'fire safety regulations and occupancy limits specified by the permit.]\n\n'
             f'#subclause("4e.")[Permit Contingency. Theta Xi\'s ability to host more than '
