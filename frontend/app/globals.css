@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =====================================================================
+   Visual language — mirrors the typst PDFs.
+   - Brand blue (#0a5482) for accents, numerals, and the thick top stripe.
+   - Hairline rules (#d8d8db) and whitespace for separation, not gray fills.
+   - Sharp corners (no rounded-md / rounded-lg). Buttons get 2px max.
+   - Uppercase tracked labels for section heads, like "BILL TO" in the PDFs.
+   ===================================================================== */
+
+@layer base {
+  html {
+    color-scheme: light;
+    background: #ffffff;
+  }
+  body {
+    @apply text-ink bg-white font-sans antialiased;
+    font-feature-settings: "ss01", "cv01", "cv11";
+  }
+
+  /* Inputs default to sharp; per-component classes can override. */
+  input, textarea, select, button {
+    border-radius: 0;
+  }
+}
+
+@layer components {
+
+  /* ── Card ─────────────────────────────────────────────────────────
+     Bordered white block with a 3px brand-blue top stripe (echoes the
+     1.2pt brand rule under the PDF letterhead). No rounded corners. */
+  .card {
+    @apply bg-white border border-rule;
+    border-top: 3px solid theme('colors.brand.DEFAULT');
+  }
+  .card-header {
+    @apply px-6 pt-4 pb-3 flex items-baseline gap-3;
+  }
+  .card-title {
+    @apply text-[11px] font-bold tracking-[0.16em] uppercase text-brand;
+  }
+  .card-subtitle {
+    @apply text-[12px] text-muted;
+  }
+  .card-body {
+    @apply px-6 pb-6;
+  }
+  .card-divider {
+    @apply border-t border-rule my-5;
+  }
+
+  /* Plain card (no top stripe) for secondary/utility blocks. */
+  .card-plain {
+    @apply bg-white border border-rule;
+  }
+
+  /* ── Field labels & inputs ────────────────────────────────────────
+     Labels are 11px uppercase tracked muted text.
+     Inputs are flat: 1px rule border, 0px radius, brand focus underline. */
+  .field-label {
+    @apply block text-[11px] font-semibold uppercase tracking-[0.10em] text-muted mb-2;
+  }
+  .field-input,
+  .field-textarea {
+    @apply w-full px-3 py-2 bg-white border border-rule text-[14px] text-ink
+           outline-none transition-colors;
+    border-radius: 0;
+  }
+  .field-input:focus,
+  .field-textarea:focus {
+    @apply border-brand;
+    box-shadow: inset 0 -1px 0 0 theme('colors.brand.DEFAULT');
+  }
+  .field-textarea {
+    @apply resize-y min-h-[80px];
+  }
+  .field-hint {
+    @apply text-[11.5px] text-muted leading-snug mt-1.5;
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────────
+     Sharp, deliberate. Uppercase tracked label like "EXECUTION" in the PDF. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+           text-[12px] font-bold tracking-[0.12em] uppercase
+           transition-colors;
+    border-radius: 0;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white border border-brand
+           hover:bg-[#08456a] hover:border-[#08456a]
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply btn bg-white text-brand border border-brand
+           hover:bg-brand-light disabled:opacity-50;
+  }
+  .btn-link {
+    @apply text-[12px] font-semibold tracking-[0.06em] text-muted
+           hover:text-warn underline-offset-4 hover:underline transition-colors
+           cursor-pointer;
+  }
+
+  /* ── Radio rows (used by pricing tiers) ───────────────────────────
+     No fill on the unselected state. Selected = brand left border + tinted bg.
+     Warn variant = warn text only, with red left border. */
+  .radio-option {
+    @apply flex items-center gap-2.5 px-3 py-2 bg-white border border-rule
+           cursor-pointer transition-colors hover:border-brand select-none;
+    border-left-width: 3px;
+    border-left-color: transparent;
+    border-radius: 0;
+  }
+  .radio-option input[type="radio"] {
+    @apply accent-brand shrink-0;
+  }
+  .radio-option.selected {
+    @apply border-brand bg-brand-light;
+    border-left-color: theme('colors.brand.DEFAULT');
+  }
+  .radio-option.selected-warn {
+    @apply bg-white;
+    border-color: theme('colors.warn');
+    border-left-color: theme('colors.warn');
+  }
+
+  /* ── Plain checkbox row ────────────────────────────────────────── */
+  .check-row {
+    @apply flex items-start gap-2.5 py-1.5 cursor-pointer text-[13.5px] select-none;
+  }
+  .check-row input[type="checkbox"] {
+    @apply accent-brand mt-0.5 shrink-0;
+  }
+  .check-row.disabled {
+    @apply text-muted/60 cursor-not-allowed;
+  }
+
+  /* ── Tabs (used by /invoice) ──────────────────────────────────────
+     Underlined tabs, brand-blue active indicator, no rounded pills. */
+  .tab-bar {
+    @apply flex border-b border-rule;
+  }
+  .tab {
+    @apply px-5 py-3 -mb-px text-left transition-colors border-b-2 border-transparent
+           text-muted hover:text-ink cursor-pointer;
+    min-width: 160px;
+  }
+  .tab .tab-label {
+    @apply block text-[13px] font-bold;
+  }
+  .tab .tab-sub {
+    @apply block text-[11px] mt-0.5 opacity-80;
+  }
+  .tab.active {
+    @apply text-brand border-brand;
+  }
+
+  /* ── Page heading (above each route's main content) ──────────────
+     Echoes the BILL TO / EXECUTION uppercase tracked labels in the PDF. */
+  .page-eyebrow {
+    @apply text-[11px] font-bold tracking-[0.18em] uppercase text-brand;
+  }
+  .page-title {
+    @apply text-[26px] font-bold text-ink tracking-[-0.01em] mt-1;
+  }
+  .page-lede {
+    @apply text-[13.5px] text-muted mt-2 max-w-[580px] leading-relaxed;
+  }
+}
