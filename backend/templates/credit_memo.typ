@@ -27,10 +27,10 @@
   margin: (left: 0.85in, right: 0.85in, top: 0.7in, bottom: 0.9in),
   footer: page_footer("Theta Xi Fraternity  ·  Credit Memo " + MEMO_NUMBER),
 )
-#set text(size: 10.5pt, font: standard_fonts, fill: ink)
-#set par(justify: false, leading: 0.74em, spacing: 1.0em, first-line-indent: 0pt)
+#set text(size: 10pt, font: standard_fonts, fill: ink)
+#set par(justify: false, leading: 0.70em, spacing: 0.85em, first-line-indent: 0pt)
 
-#letterhead("CREDIT MEMO", "Security Deposit Refund")
+#letterhead("CREDIT MEMO", "Security Deposit Refund", bottom_gap: 18pt)
 
 // ---- Issued-to + memo metadata -------------------------------------
 #billing_block(
@@ -64,15 +64,15 @@ The refund will be issued via #REFUND_METHOD. Please allow up to 5 business days
 This credit memo confirms that all conditions of the Hosting Contract relating to the security deposit have been satisfied. No further obligation exists between the parties with respect to the deposit. Any unrelated outstanding balances under the Hosting Contract remain unaffected by this credit memo.
 
 // ---- Issued-by footer ----------------------------------------------
-#v(14pt)
+#v(8pt)
 #line(length: 100%, stroke: 1.2pt + brand)
 #v(5pt)
 #text(size: 8pt, weight: "medium", tracking: 1.6pt, fill: brand)[ISSUED BY]
-#v(8pt)
-#text(size: 9.5pt, fill: ink, weight: "semibold")[#ISSUER_HEADING]
+#v(6pt)
+#text(size: 9.25pt, fill: ink, weight: "semibold")[#ISSUER_HEADING]
 #if ISSUER_CONTACT != "" {
   v(2pt)
   text(size: 9pt, fill: muted)[#ISSUER_CONTACT]
 }
 #v(2pt)
-#text(size: 9pt, fill: muted)[2639 Durant Avenue]
+#text(size: 8.75pt, fill: muted)[2639 Durant Avenue]

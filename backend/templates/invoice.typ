@@ -35,7 +35,7 @@
 #set text(size: 10.5pt, font: standard_fonts, fill: ink)
 #set par(justify: false, leading: 0.74em, spacing: 1.0em, first-line-indent: 0pt)
 
-#letterhead(DOC_KIND_LABEL, DOC_SUBTITLE)
+#letterhead(DOC_KIND_LABEL, DOC_SUBTITLE, bottom_gap: 20pt)
 
 // ---- Bill-to + invoice metadata ------------------------------------
 #billing_block(

@@ -486,7 +486,7 @@ function CreditMemoForm() {
     <form onSubmit={submit} className="space-y-6">
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Refund Amount (USD)" hint={data.depositAmount && amount === data.depositAmount
-          ? "Auto-filled from the contract&rsquo;s deposit amount."
+          ? "Auto-filled from the contract’s deposit amount."
           : undefined}>
           <input className="field-input" type="number" min={0} step="0.01" required
             placeholder="e.g. 100"

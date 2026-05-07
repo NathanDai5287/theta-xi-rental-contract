@@ -33,15 +33,15 @@
 
 // Standard fonts in fallback order — used by every template.
 #let standard_fonts = (
+  "DejaVu Sans", "Liberation Sans",
   "Inter", "Söhne", "SF Pro Text",
   "Helvetica Neue", "Helvetica", "Arial",
-  "Liberation Sans", "DejaVu Sans",
 )
 
 // ---- Letterhead -----------------------------------------------------
 // `doc_kind`: short uppercase label shown in brand color (e.g. "HOSTING CONTRACT")
 // `doc_subtitle`: small muted line below the kind (e.g. "Terms and Conditions")
-#let letterhead(doc_kind, doc_subtitle) = {
+#let letterhead(doc_kind, doc_subtitle, bottom_gap: 28pt) = {
   grid(
     columns: (auto, 1fr, auto),
     column-gutter: 18pt,
@@ -63,7 +63,7 @@
   )
   v(12pt)
   line(length: 100%, stroke: 1.2pt + brand)
-  v(28pt)
+  v(bottom_gap)
 }
 
 // ---- Section heading: numeral + title + thin rule ------------------
@@ -166,7 +166,7 @@
         [
           #pad(top: 6pt, bottom: 6pt)[
             #align(right)[
-              #text(size: 10.5pt, fill: ink, font: ("Inter", "SF Pro Text", "Helvetica Neue"))[#r.at(1)]
+              #text(size: 10.5pt, fill: ink, font: standard_fonts)[#r.at(1)]
             ]
           ]
         ],
