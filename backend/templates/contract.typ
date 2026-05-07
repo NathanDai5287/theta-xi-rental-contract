@@ -49,6 +49,8 @@ Fraternity brothers are not allowed to attend the event unless they are directly
 
 #subclause("4c.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and Members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
 
+«FIRE_PERMIT_CLAUSE»
+
 #section("05", "Use of Fraternity House Property")
 «CLUB_NAME» is hereby granted permission to utilize the Fraternity House for the duration of their event. «AMENITIES_SENTENCE»It is understood that «CLUB_NAME» is responsible for the respectful use of all property.
 

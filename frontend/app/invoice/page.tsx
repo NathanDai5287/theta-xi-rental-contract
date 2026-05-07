@@ -43,6 +43,12 @@ function buildLineItems(
         raw: breakdown.capacity,
       });
     }
+    if (breakdown.firePermit > 0) {
+      components.push({
+        description: "Fire permit (Required for > 50 guests)",
+        raw: breakdown.firePermit,
+      });
+    }
     if (breakdown.alcohol > 0)
       components.push({ description: `Alcohol — ${breakdown.alcoholLabel}`, raw: breakdown.alcohol });
     if (breakdown.protection > 0)

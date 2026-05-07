@@ -172,7 +172,12 @@ export default function ContractPage() {
         <section className="card">
           <div className="card-header"><span className="card-title">Capacity & Monitors</span></div>
           <div className="card-body grid gap-5">
-            <Field label="Maximum Guests">
+            <Field
+              label="Maximum Guests"
+              hint={parseInt(data.maxGuests) > 50
+                ? "Over 50 guests triggers a required $125 fire permit fee."
+                : "Up to 50 guests; over 50 requires a $125 fire permit."}
+            >
               <input className="field-input" type="number" min={1} max={200} required
                 placeholder="e.g. 150"
                 value={hydrated ? data.maxGuests : ""} onChange={txt("maxGuests")} />

@@ -21,6 +21,8 @@ export type PricingConstants = {
   baseRate: number;
   capacityThreshold: number;
   perGuestRate: number;
+  firePermitThreshold: number;
+  firePermitAmount: number;
   alcoholTiers: AmountTier[];
   protectionTiers: AmountTier[];
   dateTiers: AmountTier[];
@@ -36,6 +38,9 @@ export const PRICING_CONSTANTS: PricingConstants = {
 
   capacityThreshold: 20,
   perGuestRate: 2.5,
+
+  firePermitThreshold: 50,
+  firePermitAmount: 125,
 
   alcoholTiers: [
     { label: "No alcohol",    amount: 0   },

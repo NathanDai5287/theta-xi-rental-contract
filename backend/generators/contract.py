@@ -111,6 +111,56 @@ def generate_contract(values: dict[str, Any]) -> bytes:
 
     repl["«ALLOWED_AREAS_LIST»"] = english_list([AREA_LABELS[k] for k in areas])
 
+    try:
+        max_guests_num = int(base["max_guests"])
+    except ValueError:
+        max_guests_num = 0
+
+    if max_guests_num > 50:
+        try:
+            price_val = float(base["price"])
+        except ValueError:
+            price_val = 0.0
+
+        # Calculate contingency price using the user's formula:
+        # ((price - 125) * (50 / max_guests)) * 0.75
+        base_for_scale = max(0.0, price_val - 125.0)
+        scale_factor = 50.0 / max_guests_num
+        contingency_price = (base_for_scale * scale_factor) * 0.75
+        contingency_price_fmt = f"{contingency_price:,.2f}"
+
+        repl["«FIRE_PERMIT_CLAUSE»"] = (
+            f'#subclause("4d.")[As attendance is expected to exceed 50 guests, Theta Xi '
+            f'Fraternity is required to obtain a special event fire permit from the City of '
+            f'Berkeley. A fee of $125.00 has been included in the rental fee to cover the '
+            f'cost of this permit. {base["club_name"]} agrees to comply with all '
+            f'fire safety regulations and occupancy limits specified by the permit.]\n\n'
+            f'#subclause("4e.")[Permit Contingency. Theta Xi\'s ability to host more than '
+            f'50 guests is contingent upon the approval of the City of Berkeley fire '
+            f'permit. If the permit is denied or cannot be obtained for any reason, '
+            f'Theta Xi shall notify {base["club_name"]} immediately. '
+            f'{base["club_name"]} may then elect to either (i) cancel the event for '
+            f'a full refund of all deposits and fees paid, or (ii) proceed with the '
+            f'event subject to a strict **50-guest limit**. If the event proceeds under '
+            f'the 50-guest limit, the rental fee will be reduced according to the '
+            f'following procedure: first, the $125.00 permit fee is removed; second, '
+            f'the remaining balance is scaled proportionally to the reduced capacity '
+            f'(50/{max_guests_num}); and third, an additional 25% "inconvenience credit" '
+            f'is applied to the resulting total. For this event, the reduced '
+            f'contingency price is **\${contingency_price_fmt}**.\n\n'
+            f'Should the event proceed at the reduced 50-guest capacity, '
+            f'{base["club_name"]} agrees to the following additional restrictions: '
+            f'attendance is strictly capped at 50 persons; music and noise levels must '
+            f'be kept at a significantly lower volume than originally planned; and all '
+            f'guests must remain inside the Fraternity House and are prohibited from '
+            f'crowding or loitering on the sidewalk or outdoor areas. Theta Xi '
+            f'Fraternity reserves the right to immediately terminate the event and '
+            f'retain the security deposit in full if attendance exceeds 50 persons '
+            f'or if guests fail to comply with these noise and indoor-only restrictions.]'
+        )
+    else:
+        repl["«FIRE_PERMIT_CLAUSE»"] = ""
+
     # Subclause 5b — furniture restoration. Either Theta Xi clears items
     # ahead of time, or the renter is on the hook for restoring them.
     club = base["club_name"]

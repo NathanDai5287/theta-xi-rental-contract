@@ -100,6 +100,7 @@ export default function PricingCalculator() {
 
   const result = useMemo(() => {
     const Cp = Math.max(guestsNum - C.capacityThreshold, 0) * C.perGuestRate;
+    const firePermit = guestsNum > C.firePermitThreshold ? C.firePermitAmount : 0;
     const A = C.alcoholTiers[sel.alcohol].amount;
     const P = C.protectionTiers[sel.protection].amount;
     const D = C.dateTiers[sel.date].amount;
@@ -113,17 +114,26 @@ export default function PricingCalculator() {
     const relR = C.relationshipTiers[sel.relationship].r;
     const depositRate = C.relationshipTiers[sel.relationship].depositRate;
 
-    const rawSum = C.baseRate + Cp + A + P + D + Su + Sc;
+    const rawSum = C.baseRate + Cp + firePermit + A + P + D + Su + Sc;
     const postW = rawSum * W;
     const adj = postW * relR;
     const total = Math.max(postW - adj, 0);
+
+    // Permit contingency price (if > 50 guests):
+    // ((total - 125) * (50 / n)) * 0.75
+    let contingencyPrice = 0;
+    if (guestsNum > C.firePermitThreshold) {
+      const baseForScale = Math.max(0, total - C.firePermitAmount);
+      contingencyPrice = (baseForScale * (C.firePermitThreshold / guestsNum)) * 0.75;
+    }
+
     // Risk-adjusted collateral: higher trust → lower deposit; known-issue
     // groups pay more. Rounded to nearest $50, never below $100.
     const deposit = Math.max(Math.round((total * depositRate) / 50) * 50, 100);
 
     return {
-      n: guestsNum, Cp, A, P, D, Su, Sc, W, relR, depositRate,
-      rawSum, postW, adj, total, deposit,
+      n: guestsNum, Cp, firePermit, A, P, D, Su, Sc, W, relR, depositRate,
+      rawSum, postW, adj, total, contingencyPrice, deposit,
       // labels
       wealthLabel: C.wealthTiers[sel.wealth].label,
       relLabel:    C.relationshipTiers[sel.relationship].label,
@@ -149,6 +159,7 @@ export default function PricingCalculator() {
     update("pricingBreakdown", {
       base: C.baseRate,
       capacity: result.Cp,
+      firePermit: result.firePermit,
       alcohol: result.A,
       protection: result.P,
       date: result.D,
@@ -162,6 +173,7 @@ export default function PricingCalculator() {
       relLabel: result.relLabel,
       adj: result.adj,
       total: result.total,
+      contingencyPrice: result.contingencyPrice,
       suggestedDeposit: result.deposit,
       depositRate: result.depositRate,
       alcoholLabel: result.alcoholLabel,
@@ -277,6 +289,11 @@ export default function PricingCalculator() {
             dim={result.Cp === 0}
           />
           <BreakdownRow
+            label="Fire permit (Required for > 50 guests)"
+            value={result.firePermit > 0 ? `+${fmt(result.firePermit)}` : "$0"}
+            dim={result.firePermit === 0}
+          />
+          <BreakdownRow
             label={`Alcohol — ${result.alcoholLabel}`}
             value={result.A > 0 ? `+${fmt(result.A)}` : "$0"}
             dim={result.A === 0}
@@ -331,6 +348,18 @@ export default function PricingCalculator() {
             value={fmt(result.total)}
             className="!text-brand text-[14px] font-extrabold pt-1"
           />
+
+          {result.contingencyPrice > 0 && (
+            <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+              <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500 mb-1">
+                Permit Contingency
+              </div>
+              <div className="text-[12px] text-slate-600 leading-snug">
+                If the fire permit is denied, the reduced 50-person price is{" "}
+                <span className="font-bold text-slate-900">{fmt(result.contingencyPrice)}</span>.
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     </div>

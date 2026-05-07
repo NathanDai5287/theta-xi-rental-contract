@@ -26,6 +26,7 @@ export type AreaKey = "living_room" | "dining_room" | "backyard";
 export type PricingBreakdown = {
   base: number;
   capacity: number;
+  firePermit: number;
   alcohol: number;
   protection: number;
   date: number;
@@ -39,6 +40,7 @@ export type PricingBreakdown = {
   relLabel: string;
   adj: number;
   total: number;
+  contingencyPrice: number;
   // Suggested deposit + the rate it was derived from (so the contract
   // can show "auto-filled at 25%").
   suggestedDeposit: number;
@@ -151,8 +153,8 @@ const Ctx = createContext<SharedDataApi | null>(null);
  *  missing on a stored breakdown, the schema has changed since it was
  *  written and we drop it so the calculator can re-derive a valid one. */
 const BREAKDOWN_REQUIRED_KEYS: (keyof PricingBreakdown)[] = [
-  "base", "capacity", "alcohol", "protection", "date", "setup", "cleanup",
-  "subtotal", "wealthMult", "postW", "relR", "adj", "total",
+  "base", "capacity", "firePermit", "alcohol", "protection", "date", "setup", "cleanup",
+  "subtotal", "wealthMult", "postW", "relR", "adj", "total", "contingencyPrice",
   "suggestedDeposit", "depositRate",
   "guests", "capacityThreshold", "perGuestRate",
 ];
