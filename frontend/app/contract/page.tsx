@@ -66,6 +66,9 @@ export default function ContractPage() {
       const clearedMap: Record<string, boolean> = {};
       selectedAreas.forEach(k => { clearedMap[k] = data.cleared[k]; });
 
+      const cleanupIdx = Math.min(Math.max(data.pricingSelections.cleanup, 0), 1);
+      const cleanupTier = cleanupIdx === 1 ? "full" : "basic";
+
       const { filename } = await generatePdf("/api/generate/contract", {
         club_name:  data.clubName,
         date:       formatDateISO(data.eventDate),  // "May 5, 2026"
@@ -75,6 +78,7 @@ export default function ContractPage() {
         deposit:    data.depositAmount,
         max_guests: data.maxGuests,
         monitors:   data.monitors,
+        cleanup_tier: cleanupTier,
         areas:      selectedAreas,
         cleared:    clearedMap,
         guest_list:      data.guestList,

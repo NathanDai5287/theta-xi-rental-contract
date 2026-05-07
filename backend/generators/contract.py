@@ -47,6 +47,8 @@ class ContractInput(TypedDict, total=False):
     deposit: str
     max_guests: str
     monitors: str
+    # tier options
+    cleanup_tier: str               # "basic" | "full"
     # toggles
     areas: list[str]                 # subset of AREA_LABELS keys
     cleared: dict[str, bool]         # area key → "Theta Xi clears beforehand?"
@@ -132,6 +134,34 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             f'the event must be returned to their original positions before the conclusion of '
             f'the rental period. Failure to restore moved items will be treated as damage '
             f'under Section 06.]'
+        )
+
+    # Subclause 5c — cleanup tier (derived from Pricing)
+    cleanup_tier = str(values.get("cleanup_tier") or "basic").strip().lower()
+    if cleanup_tier not in ("basic", "full"):
+        raise ValueError("cleanup_tier must be 'basic' or 'full'")
+
+    if cleanup_tier == "full":
+        repl["«CLEANUP_TIER_CLAUSE»"] = (
+            f'#subclause("5c.")[Cleanup Tier — Full Service. Theta Xi Fraternity will provide '
+            f'full post-event cleanup services, including trash collection and disposal, '
+            f'wipe-down of obvious spills or sticky surfaces, and restoration of moved furniture '
+            f'and items to their original positions. Theta Xi will mop the premises following '
+            f'the event regardless of cleanup tier. Any personal property, decorations, or '
+            f'equipment left behind by {club} or its guests after the conclusion of the rental '
+            f'period may be treated as abandoned property and may be discarded at Theta Xi '
+            f'Fraternity\'s discretion; Theta Xi is not responsible for loss or damage to such '
+            f'items.]'
+        )
+    else:
+        repl["«CLEANUP_TIER_CLAUSE»"] = (
+            f'#subclause("5c.")[Cleanup Tier — Basic. {club} is responsible for collecting all '
+            f'trash and disposables, placing them into bags, and disposing of them in the '
+            f'designated bins or dumpster, and for removing any personal property or decorations '
+            f'brought in for the event. {club} is also responsible for restoring any moved '
+            f'furniture or items to their original positions before the conclusion of the '
+            f'rental period. Theta Xi will mop the premises following the event regardless of '
+            f'cleanup tier.]'
         )
 
     if sign:

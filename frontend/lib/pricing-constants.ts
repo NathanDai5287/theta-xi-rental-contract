@@ -59,14 +59,13 @@ export const PRICING_CONSTANTS: PricingConstants = {
 
   setupTiers: [
     { label: "They handle it",  amount: 0   },
-    { label: "Light setup",     amount: 75  },
-    { label: "Full production", amount: 200 },
+    { label: "Light setup",     amount: 25  },
+    { label: "Full production", amount: 50 },
   ],
 
   cleanupTiers: [
-    { label: "They clean",     amount: 0   },
-    { label: "Light cleanup",  amount: 75  },
-    { label: "Full service",   amount: 200 },
+    { label: "Basic", amount: 0 },
+    { label: "Full",  amount: 200 },
   ],
 
   wealthTiers: [

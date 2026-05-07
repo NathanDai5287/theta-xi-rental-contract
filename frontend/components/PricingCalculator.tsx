@@ -104,7 +104,11 @@ export default function PricingCalculator() {
     const P = C.protectionTiers[sel.protection].amount;
     const D = C.dateTiers[sel.date].amount;
     const Su = C.setupTiers[sel.setup].amount;
-    const Sc = C.cleanupTiers[sel.cleanup].amount;
+
+    // Cleanup tiers were reduced from 3 → 2. Clamp any stored old values.
+    const cleanupIdx = Math.min(Math.max(sel.cleanup, 0), C.cleanupTiers.length - 1);
+    const Sc = C.cleanupTiers[cleanupIdx].amount;
+
     const W = C.wealthTiers[sel.wealth].multiplier;
     const relR = C.relationshipTiers[sel.relationship].r;
     const depositRate = C.relationshipTiers[sel.relationship].depositRate;
@@ -127,13 +131,21 @@ export default function PricingCalculator() {
       protectionLabel: C.protectionTiers[sel.protection].label,
       dateLabel:       C.dateTiers[sel.date].label,
       setupLabel:      C.setupTiers[sel.setup].label,
-      cleanupLabel:    C.cleanupTiers[sel.cleanup].label,
+      cleanupLabel:    C.cleanupTiers[cleanupIdx].label,
     };
   }, [C, guestsNum, sel]);
 
   // Persist computed breakdown to shared state — contract & invoice consume it.
   useEffect(() => {
     if (!hydrated) return;
+
+    // Normalize any old stored cleanup selection (previously 0..2) into the
+    // new 2-tier range (0..1) so we don't keep re-clamping every render.
+    const cleanupIdx = Math.min(Math.max(sel.cleanup, 0), C.cleanupTiers.length - 1);
+    if (sel.cleanup !== cleanupIdx) {
+      update("pricingSelections", { ...sel, cleanup: cleanupIdx });
+    }
+
     update("pricingBreakdown", {
       base: C.baseRate,
       capacity: result.Cp,
@@ -221,7 +233,7 @@ export default function PricingCalculator() {
 
           <div>
             <label className="field-label">Cleanup</label>
-            <RadioGroup name="cleanup" tiers={C.cleanupTiers} selected={sel.cleanup}
+            <RadioGroup name="cleanup" tiers={C.cleanupTiers} selected={Math.min(Math.max(sel.cleanup, 0), C.cleanupTiers.length - 1)}
               onSelect={setSel("cleanup")} formatVal={fmtDollar} />
           </div>
 

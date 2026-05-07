@@ -202,6 +202,16 @@ function DepositForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, initialAmount]);
 
+  // Auto-fill due date to event date (same day, 1 hour before event).
+  // Runs once after hydration; the user can override and we won't clobber.
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!dueDate && data.eventDate) {
+      setDueDate(data.eventDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, data.eventDate]);
+
   const sharedReady = hydrated && data.clubName.trim() !== "" && data.eventDate.trim() !== "";
 
   async function submit(e: React.FormEvent) {

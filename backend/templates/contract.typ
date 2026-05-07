@@ -31,7 +31,7 @@
 #section("02", "Rental Fee")
 «CLUB_NAME» agrees to pay a rental fee of \$«PRICE» for the use of the Fraternity House for the event. The full rental fee is due within 2 days after the conclusion of the event. Accepted payment methods are cash, Zelle, or credit card (subject to a 3% processing surcharge). Rental fee is subject to change based on Theta Xi's Executive decision.
 
-#subclause("2a.")[«CLUB_NAME» shall provide a security deposit of \$«DEPOSIT», due in full before the event start time. Upon receipt of the full rental fee, Theta Xi will return the \$«DEPOSIT» security deposit to «CLUB_NAME», subject to the conditions specified in this Agreement. The security deposit is a separate obligation from the rental fee; any forfeiture or retention of the security deposit by Theta Xi Fraternity does not reduce or offset the rental fee owed by «CLUB_NAME». Partial payment of the rental fee does not constitute settlement — the full rental fee remains due regardless of any amount remitted. Should the rental fee not be received within 2 days after the event, Theta Xi Fraternity reserves the right to retain the security deposit.]
+#subclause("2a.")[«CLUB_NAME» shall provide a security deposit of \$«DEPOSIT», due in full no later than 1 hour before the event start time. If the security deposit is not received by that time, Theta Xi Fraternity reserves the right to cancel the event and terminate this Agreement. Upon receipt of the full rental fee, Theta Xi will return the \$«DEPOSIT» security deposit to «CLUB_NAME», subject to the conditions specified in this Agreement. The security deposit is a separate obligation from the rental fee; any forfeiture or retention of the security deposit by Theta Xi Fraternity does not reduce or offset the rental fee owed by «CLUB_NAME». Partial payment of the rental fee does not constitute settlement — the full rental fee remains due regardless of any amount remitted. Should the rental fee not be received within 2 days after the event, Theta Xi Fraternity reserves the right to retain the security deposit.]
 
 #subclause("2b.")[If either party cancels this Agreement prior to the event, no cancellation fee will be assessed. Any security deposit already paid by «CLUB_NAME» will be returned in full.]
 
@@ -55,6 +55,8 @@ Fraternity brothers are not allowed to attend the event unless they are directly
 #subclause("5a.")[«CLUB_NAME» shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, «CLUB_NAME» shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
 
 «SPACE_CLEARING_SUBCLAUSE»
+
+«CLEANUP_TIER_CLAUSE»
 
 #section("06", "Damages and Security Deposit")
 If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$«DEPOSIT» security deposit provided by «CLUB_NAME». If the cost of repairs or replacement exceeds \$«DEPOSIT», «CLUB_NAME» agrees to cover the additional expenses.

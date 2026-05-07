@@ -33,7 +33,7 @@ def _terms_block(kind: InvoiceKind, club: str) -> str:
             f'This invoice represents the security deposit required to secure the rental '
             f'of the Theta Xi Fraternity House. Payment of this deposit confirms {club}\'s '
             f'agreement to the Hosting Contract executed for this event.\n\n'
-            f'#subclause("2a.")[The security deposit must be received in full before '
+            f'#subclause("2a.")[The security deposit must be received in full no later than 1 hour before '
             f'the event start time. The event will not be permitted to commence until '
             f'this invoice is paid.]\n\n'
             f'#subclause("2b.")[Upon receipt of the full rental fee following the event, '
