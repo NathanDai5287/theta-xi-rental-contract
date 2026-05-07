@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+.ven/
 venv/
 
 # Generated PDFs (use the apps to recreate)

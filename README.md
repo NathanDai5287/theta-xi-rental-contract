@@ -95,6 +95,28 @@ Open `http://localhost:3000`. `next.config.mjs` rewrites `/api/*` to the Flask b
 
 ---
 
+## Running in production (systemd + gunicorn)
+
+A sample `systemd` unit is provided at:
+
+- `backend/deploy/theta-xi-backend.service`
+
+On the server, copy it to `/etc/systemd/system/theta-xi-backend.service`, adjust `User=` and paths if needed, then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now theta-xi-backend.service
+sudo systemctl status theta-xi-backend.service --no-pager
+```
+
+If it fails, inspect logs:
+
+```bash
+journalctl -u theta-xi-backend.service -e --no-pager
+```
+
+---
+
 ## Generating a contract from the command line
 
 The interactive CLI from the original codebase is preserved at `backend/render_contract.py`:

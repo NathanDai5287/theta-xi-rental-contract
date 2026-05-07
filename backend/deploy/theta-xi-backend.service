@@ -1,0 +1,17 @@
+[Unit]
+Description=Theta Xi PDF backend (Flask)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=natha
+WorkingDirectory=/home/natha/Programming/theta-xi-rental-contract/backend
+Environment="PATH=/home/natha/Programming/theta-xi-rental-contract/backend/.venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/home/natha/Programming/theta-xi-rental-contract/backend/.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 app:app
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
