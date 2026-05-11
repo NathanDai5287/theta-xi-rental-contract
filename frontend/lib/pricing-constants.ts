@@ -34,10 +34,10 @@ export type PricingConstants = {
 };
 
 export const PRICING_CONSTANTS: PricingConstants = {
-  baseRate: 200,
+  baseRate: 150,
 
   capacityThreshold: 20,
-  perGuestRate: 2.5,
+  perGuestRate: 2,
 
   firePermitThreshold: 50,
   firePermitAmount: 125,
