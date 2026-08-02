@@ -15,6 +15,7 @@ requests on different threads.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import sqlite3
 from datetime import datetime, timezone
@@ -135,13 +136,26 @@ def _require_json_object(value: Any, field: str) -> dict[str, Any]:
     return value
 
 
+_EVENT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def _validate_event_date(value: Any) -> str:
+    """Require a strictly zero-padded YYYY-MM-DD.
+
+    The regex is not redundant with strptime: `%Y-%m-%d` happily accepts
+    "2026-5-5", which would then be stored unpadded. `event_date` is a TEXT
+    column ordered lexicographically by `list_orders`, so an unpadded value
+    sorts out of place ("2026-5-5" > "2026-12-01") and the archive silently
+    lists that rental in the wrong position.
+    """
     if not isinstance(value, str):
         raise ValueError("eventDate must be a YYYY-MM-DD string")
+    if not _EVENT_DATE_RE.match(value):
+        raise ValueError("eventDate must match YYYY-MM-DD (zero-padded)")
     try:
         datetime.strptime(value, "%Y-%m-%d")
     except ValueError:
-        raise ValueError("eventDate must match YYYY-MM-DD")
+        raise ValueError("eventDate must be a real calendar date")
     return value
 
 
@@ -253,19 +267,23 @@ def list_orders(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     doc_rows = conn.execute(
         "SELECT order_id, kind FROM documents ORDER BY order_id, generated_at ASC, rowid ASC"
     ).fetchall()
-    kinds_by_order: dict[str, list[str]] = {}
-    for d in doc_rows:
-        kinds = kinds_by_order.setdefault(d["order_id"], [])
-        if d["kind"] not in kinds:
-            kinds.append(d["kind"])
+    # `documentKinds` is distinct and in DOCUMENT_KINDS order, not generation
+    # order: the list view renders it as "which of the four exist", so the
+    # sequence has to be stable regardless of the order they were issued in.
+    kinds_by_order: dict[str, set[str]] = {}
     counts_by_order: dict[str, int] = {}
     for d in doc_rows:
+        kinds_by_order.setdefault(d["order_id"], set()).add(d["kind"])
         counts_by_order[d["order_id"]] = counts_by_order.get(d["order_id"], 0) + 1
+
+    def ordered_kinds(order_id: str) -> list[str]:
+        present = kinds_by_order.get(order_id, set())
+        return [k for k in DOCUMENT_KINDS if k in present]
 
     return [
         _order_summary_to_json(
             row,
-            kinds_by_order.get(row["id"], []),
+            ordered_kinds(row["id"]),
             counts_by_order.get(row["id"], 0),
         )
         for row in order_rows

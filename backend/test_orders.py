@@ -400,5 +400,55 @@ def test_list_orders_summary_shape_and_document_fields(client, auth_headers):
     assert "snapshot" not in summary
     assert "documents" not in summary
     assert summary["documentCount"] == 3
-    # distinct, in display (first-generated) order
-    assert summary["documentKinds"] == ["deposit_invoice", "contract"]
+    # Distinct, and in DOCUMENT_KINDS order regardless of when each was issued
+    # here the deposit invoice was generated first, but contract sorts ahead.
+    assert summary["documentKinds"] == ["contract", "deposit_invoice"]
+
+
+def test_document_kinds_ignore_generation_order(client, auth_headers):
+    """The list view renders documentKinds as "which of the four exist", so the
+    sequence must not depend on the order the documents happened to be issued."""
+    created = client.post("/api/orders", json=_sample_order(), headers=auth_headers).get_json()["order"]
+    # Issue them in reverse display order.
+    for kind, number in [
+        ("credit_memo", "CM-1"),
+        ("rental_invoice", "RNT-1"),
+        ("contract", "CTR-1"),
+    ]:
+        client.post(
+            f"/api/orders/{created['id']}/documents",
+            json=_sample_document(kind=kind, number=number, filename=f"{number}.pdf"),
+            headers=auth_headers,
+        )
+
+    summary = client.get("/api/orders", headers=auth_headers).get_json()["orders"][0]
+    assert summary["documentKinds"] == ["contract", "rental_invoice", "credit_memo"]
+
+
+@pytest.mark.parametrize("bad_date", ["2026-5-5", "2026-05-5", "26-05-05", "2026-5-05"])
+def test_event_date_must_be_zero_padded(client, auth_headers, bad_date):
+    """`%Y-%m-%d` accepts "2026-5-5", but event_date is a TEXT column sorted
+    lexicographically — an unpadded value silently sorts into the wrong place
+    in the archive, so it has to be rejected at the door."""
+    body = _sample_order()
+    body["eventDate"] = bad_date
+    r = client.post("/api/orders", json=body, headers=auth_headers)
+    assert r.status_code == 400, f"{bad_date!r} should be rejected"
+    assert r.get_json()["error"] == "invalid_input"
+
+
+def test_event_date_padding_enforced_on_patch(client, auth_headers):
+    created = client.post("/api/orders", json=_sample_order(), headers=auth_headers).get_json()["order"]
+    r = client.patch(f"/api/orders/{created['id']}", json={"eventDate": "2026-5-5"}, headers=auth_headers)
+    assert r.status_code == 400
+
+
+def test_list_orders_sorts_dates_correctly_across_month_boundary(client, auth_headers):
+    """Regression for the padding bug: December must outrank May."""
+    for club, date in [("May Club", "2026-05-05"), ("Dec Club", "2026-12-01")]:
+        body = _sample_order()
+        body["clubName"], body["eventDate"] = club, date
+        client.post("/api/orders", json=body, headers=auth_headers)
+
+    orders = client.get("/api/orders", headers=auth_headers).get_json()["orders"]
+    assert [o["clubName"] for o in orders] == ["Dec Club", "May Club"]
