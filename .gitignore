@@ -1,3 +1,5 @@
+delete.*
+
 # Python
 __pycache__/
 *.pyc
@@ -9,6 +11,11 @@ venv/
 # Generated PDFs (use the apps to recreate)
 *.pdf
 
+# Orders archive SQLite DB (server-local state, not source)
+backend/orders.db
+backend/orders.db-wal
+backend/orders.db-shm
+
 # Node / Next.js
 node_modules/
 .next/
@@ -19,3 +26,7 @@ out/
 Thumbs.db
 .vscode/
 .idea/
+
+# Vercel project linkage (local only)
+.vercel
+frontend/.vercel

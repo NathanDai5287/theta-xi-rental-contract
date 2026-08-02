@@ -17,7 +17,10 @@ All four PDFs (contract + two invoice kinds + credit memo) are rendered with [Ty
 ├── README.md
 ├── formula.md                          Pricing formula reference
 ├── backend/
-│   ├── app.py                          Flask app (PDF endpoints)
+│   ├── app.py                          Flask app (PDF endpoints + orders API)
+│   ├── store.py                        SQLite storage layer for the order archive
+│   ├── test_orders.py                  pytest suite for the orders API
+│   ├── orders.db                       SQLite file (created on startup; gitignored)
 │   ├── render_contract.py              Interactive CLI for contracts
 │   ├── requirements.txt
 │   ├── generators/
@@ -82,6 +85,43 @@ The server listens on `http://127.0.0.1:5000` and exposes:
 | `POST /api/generate/credit-memo`      | `club_name, event_date, amount, issue_date, original_invoice, [memo_number, refund_method, refund_description]` |
 
 Each endpoint returns `application/pdf` with a `Content-Disposition` filename.
+
+#### Order archive API (`/api/orders*`)
+
+A CRUD API, backed by SQLite, recording every rental as an event + pricing
+snapshot + every PDF document issued for it. Called **server-to-server only**
+from the Next.js app's own backend — it is intentionally left out of the
+CORS allowlist (see `backend/app.py`), so a browser on any origin cannot
+reach it, and every request requires an `X-Admin-Key` header matching the
+`ADMIN_KEY` env var (see below). If `ADMIN_KEY` isn't set, every request is
+rejected (fail closed).
+
+| Endpoint | Notes |
+| --- | --- |
+| `GET /api/orders` | `{"orders": [OrderSummary, ...]}`, newest event first |
+| `POST /api/orders` | `{clubName, eventDate, rentalPrice, depositAmount, notes?, snapshot, documents?}` → `{"order": Order}`, 201 |
+| `GET /api/orders/<id>` | `{"order": Order}`, 404 if unknown |
+| `PATCH /api/orders/<id>` | any subset of `{clubName, eventDate, rentalPrice, depositAmount, statusOverride, notes, snapshot}` → `{"order": Order}` |
+| `DELETE /api/orders/<id>` | `{"ok": true}` |
+| `POST /api/orders/<id>/documents` | body is an `OrderDocument` without `id` → `{"order": Order}`, 201 |
+
+`snapshot` and each document's `payload` are stored verbatim as JSON — the
+Next app replays `payload` to regenerate the exact PDF byte-for-byte, so
+these are never normalized or reordered.
+
+Environment variables:
+
+| Var | Default | Purpose |
+| --- | --- | --- |
+| `ADMIN_KEY` | *(unset)* | Shared secret required in the `X-Admin-Key` header on every `/api/orders*` request. Must be set for the orders API to be reachable at all. |
+| `ORDERS_DB_PATH` | `backend/orders.db` | Path to the SQLite file backing the order archive. |
+
+Run the test suite (uses a temp-file DB, never the real one):
+
+```bash
+cd backend
+python -m pytest test_orders.py -v
+```
 
 ### Frontend (Next.js, port 3000)
 
