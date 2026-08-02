@@ -383,6 +383,7 @@ def test_list_orders_summary_shape_and_document_fields(client, auth_headers):
         json=_sample_document(kind="deposit_invoice"),
         headers=auth_headers,
     )
+    # Same kind again — supersedes the first rather than adding a second.
     client.post(
         f"/api/orders/{created['id']}/documents",
         json=_sample_document(kind="deposit_invoice", number="DEP-2", filename="dep2.pdf"),
@@ -399,7 +400,7 @@ def test_list_orders_summary_shape_and_document_fields(client, auth_headers):
 
     assert "snapshot" not in summary
     assert "documents" not in summary
-    assert summary["documentCount"] == 3
+    assert summary["documentCount"] == 2
     # Distinct, and in DOCUMENT_KINDS order regardless of when each was issued
     # here the deposit invoice was generated first, but contract sorts ahead.
     assert summary["documentKinds"] == ["contract", "deposit_invoice"]
@@ -452,3 +453,84 @@ def test_list_orders_sorts_dates_correctly_across_month_boundary(client, auth_he
 
     orders = client.get("/api/orders", headers=auth_headers).get_json()["orders"]
     assert [o["clubName"] for o in orders] == ["Dec Club", "May Club"]
+
+
+def test_regenerating_a_document_replaces_it(client, auth_headers):
+    """A rental has at most one of each document. Re-posting the same kind
+    supersedes the earlier one — two deposit invoices on an order would
+    double-count in the archive's ledger and misreport the balance."""
+    created = client.post("/api/orders", json=_sample_order(), headers=auth_headers).get_json()["order"]
+
+    first = client.post(
+        f"/api/orders/{created['id']}/documents",
+        json=_sample_document(kind="deposit_invoice", number="DEP-1", filename="dep1.pdf", amount=500),
+        headers=auth_headers,
+    ).get_json()["order"]
+    assert len(first["documents"]) == 1
+
+    second = client.post(
+        f"/api/orders/{created['id']}/documents",
+        json=_sample_document(kind="deposit_invoice", number="DEP-2", filename="dep2.pdf", amount=600),
+        headers=auth_headers,
+    ).get_json()["order"]
+
+    assert len(second["documents"]) == 1, "regeneration must replace, not append"
+    assert second["documents"][0]["number"] == "DEP-2"
+    assert second["documents"][0]["amount"] == 600
+    # Total across deposit invoices must be 600, not 1100.
+    assert sum(d["amount"] for d in second["documents"] if d["kind"] == "deposit_invoice") == 600
+
+
+def test_saving_is_idempotent(client, auth_headers):
+    """The documents step re-sends every generated document on each save, so
+    pressing save repeatedly must converge rather than accumulate."""
+    created = client.post("/api/orders", json=_sample_order(), headers=auth_headers).get_json()["order"]
+    docs = [
+        _sample_document(kind="contract", number="CTR-1", filename="ctr.pdf", amount=2000),
+        _sample_document(kind="deposit_invoice", number="DEP-1", filename="dep.pdf", amount=500),
+    ]
+    for _ in range(3):
+        for d in docs:
+            r = client.post(f"/api/orders/{created['id']}/documents", json=d, headers=auth_headers)
+            assert r.status_code == 201
+
+    order = client.get(f"/api/orders/{created['id']}", headers=auth_headers).get_json()["order"]
+    assert len(order["documents"]) == 2
+    summary = client.get("/api/orders", headers=auth_headers).get_json()["orders"][0]
+    assert summary["documentCount"] == 2
+
+
+def test_create_dedupes_inline_documents_by_kind(client, auth_headers):
+    body = _sample_order()
+    body["documents"] = [
+        _sample_document(kind="contract", number="CTR-old", filename="a.pdf", amount=1),
+        _sample_document(kind="contract", number="CTR-new", filename="b.pdf", amount=2),
+    ]
+    order = client.post("/api/orders", json=body, headers=auth_headers).get_json()["order"]
+    assert len(order["documents"]) == 1
+    assert order["documents"][0]["number"] == "CTR-new", "last of each kind should win"
+
+
+def test_different_kinds_still_coexist(client, auth_headers):
+    """The uniqueness rule is per (order, kind) — not one document per order."""
+    created = client.post("/api/orders", json=_sample_order(), headers=auth_headers).get_json()["order"]
+    for kind in ("contract", "deposit_invoice", "rental_invoice", "credit_memo"):
+        client.post(
+            f"/api/orders/{created['id']}/documents",
+            json=_sample_document(kind=kind, number=f"{kind}-1", filename=f"{kind}.pdf"),
+            headers=auth_headers,
+        )
+    order = client.get(f"/api/orders/{created['id']}", headers=auth_headers).get_json()["order"]
+    assert len(order["documents"]) == 4
+
+
+def test_same_kind_on_different_orders_is_fine(client, auth_headers):
+    a = client.post("/api/orders", json=_sample_order(), headers=auth_headers).get_json()["order"]
+    b = client.post("/api/orders", json=_sample_order(), headers=auth_headers).get_json()["order"]
+    for oid in (a["id"], b["id"]):
+        r = client.post(
+            f"/api/orders/{oid}/documents",
+            json=_sample_document(kind="contract", number="CTR-1", filename="c.pdf"),
+            headers=auth_headers,
+        )
+        assert r.status_code == 201

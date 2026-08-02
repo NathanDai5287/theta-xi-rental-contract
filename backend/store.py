@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_order_id ON documents(order_id);
+
+-- A rental has at most one of each document. Regenerating a PDF supersedes
+-- the previous one rather than adding a second: two deposit invoices on an
+-- order would double-count in the archive's ledger and misreport the balance.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_order_kind ON documents(order_id, kind);
 """
 
 
@@ -328,7 +333,12 @@ def create_order(conn: sqlite3.Connection, body: Any) -> dict[str, Any]:
     raw_documents = body.get("documents") or []
     if not isinstance(raw_documents, list):
         raise ValueError("documents must be an array")
-    documents = [_validate_document_input(d) for d in raw_documents]
+    # Last of each kind wins — see the unique index on (order_id, kind).
+    by_kind: dict[str, dict[str, Any]] = {}
+    for d in raw_documents:
+        validated = _validate_document_input(d)
+        by_kind[validated["kind"]] = validated
+    documents = list(by_kind.values())
 
     order_id = new_id("ord")
     ts = now_iso()
@@ -422,11 +432,22 @@ def delete_order(conn: sqlite3.Connection, order_id: str) -> bool:
 
 
 def add_document(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str, Any] | None:
-    """Append a document to an order. Returns the updated Order, or None if the order is unknown."""
+    """Record a document against an order, replacing any previous one of the
+    same kind. Returns the updated Order, or None if the order is unknown.
+
+    Upsert rather than append so the endpoint is idempotent: the documents
+    step re-sends every document it has generated each time the user saves,
+    and a regenerated PDF supersedes its predecessor instead of leaving two
+    of the same kind on the order (which would double-count in the ledger).
+    """
     if _fetch_order_row(conn, order_id) is None:
         return None
     doc = _validate_document_input(body)
 
+    conn.execute(
+        "DELETE FROM documents WHERE order_id = ? AND kind = ?",
+        (order_id, doc["kind"]),
+    )
     doc_id = new_id("doc")
     conn.execute(
         """
