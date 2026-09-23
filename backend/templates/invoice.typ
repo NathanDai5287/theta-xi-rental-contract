@@ -22,9 +22,6 @@
 // Treasurer mention. Pre-built phrase: either "the Theta Xi treasurer"
 // (default) or e.g. "Nathan Dai (Theta Xi Treasurer)" when a name is set.
 #let TREASURER_PHRASE = "«TREASURER_PHRASE»"
-// Footer line about who to contact with questions. Defaults to a generic
-// "Contact the Theta Xi treasurer." when no name is set.
-#let TREASURER_CONTACT_SENTENCE = "«TREASURER_CONTACT_SENTENCE»"
 
 #set document(title: "Theta Xi Invoice " + INVOICE_NUMBER)
 #set page(
@@ -63,6 +60,9 @@ Accepted payment methods are cash, Zelle, or credit card (subject to a 3% proces
 «TERMS_BLOCK»
 
 // ---- Footer note ---------------------------------------------------
+// Constant contact line — deliberately not interpolated with the
+// organization name(s): a long multi-organization name here can push the
+// details past one page. (@ is escaped — bare @ starts a typst reference.)
 #v(20pt)
 
 #block(breakable: false)[
@@ -71,8 +71,6 @@ Accepted payment methods are cash, Zelle, or credit card (subject to a 3% proces
   #text(size: 8pt, weight: "medium", tracking: 1.6pt, fill: brand)[NOTES]
   #v(10pt)
   #text(size: 9.5pt, fill: muted)[
-    Questions about this invoice? #TREASURER_CONTACT_SENTENCE
-    All terms herein are governed by, and incorporated into, the Hosting Contract executed
-    between Theta Xi Fraternity and #CLUB_NAME for the event on #EVENT_DATE.
+    Questions about this invoice? Contact Nathan Dai at nathan.dai\@berkeley.edu.
   ]
 ]

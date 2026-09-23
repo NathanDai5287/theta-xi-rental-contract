@@ -193,20 +193,11 @@ def _renter_sig_column(clubs: list[str], multi: bool) -> str:
             '  #sig_cell([], "DATE", 18pt)\n'
             "]"
         )
-    if len(blocks) <= 5:
-        return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
-    # 6+ organizations: a single column overflows the execution block and
-    # typst silently clips the lowest signature off the page — a contract
-    # missing a party's signature line. Two columns keep ~10 on one page.
-    cells = "\n".join(f"    [{block}]," for block in blocks)
-    return (
-        "[\n#grid(\n"
-        "    columns: (1fr, 1fr),\n"
-        "    column-gutter: 20pt,\n"
-        "    row-gutter: 14pt,\n"
-        f"{cells}\n"
-        "  )\n]"
-    )
+    # Always a single stack down the right column — never split into
+    # sub-columns. With many organizations the stack can exceed one page;
+    # «SIG_BLOCK_BREAKABLE» lets it flow instead of clipping (each block
+    # above is unbreakable, so no party's lines ever split).
+    return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
 
 
 def generate_contract(values: dict[str, Any]) -> bytes:

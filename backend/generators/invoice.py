@@ -113,23 +113,6 @@ def _treasurer_phrase(name: str) -> str:
     return f"{name} (Theta Xi Treasurer)"
 
 
-def _treasurer_contact_sentence(name: str, contact: str) -> str:
-    """
-    Footer "Questions about this invoice?" sentence:
-
-      "Contact the Theta Xi treasurer."          (no name, no contact)
-      "Contact Nathan Dai."                      (name only)
-      "Contact Nathan Dai at nathan@x.edu."      (name + contact)
-      "Contact the Theta Xi treasurer at …"      (contact only — unusual)
-    """
-    name = (name or "").strip()
-    contact = (contact or "").strip()
-    who = name if name else "the Theta Xi treasurer"
-    if contact:
-        return f"Contact {who} at {contact}."
-    return f"Contact {who}."
-
-
 def _format_line_items(rows: list[tuple[str, str]]) -> str:
     """
     Build a typst array literal of the form `(("desc", "$1.00"), ("desc2", "$2.00"),)`.
@@ -245,8 +228,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         doc_subtitle   = "Rental Fee · Due 2 Days After Event"
         due_label      = "Due Date"
 
-    treasurer_name    = str(values.get("treasurer_name") or "").strip()
-    treasurer_contact = str(values.get("treasurer_contact") or "").strip()
+    treasurer_name = str(values.get("treasurer_name") or "").strip()
 
     # Deposit forfeiture clause 3c cites the contract's 4a cap: the house
     # capacity (200), or the agreed maximum guests when that's higher.
@@ -273,9 +255,6 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         "«LINE_ITEMS»":         _format_line_items(rows),
         "«TOTAL_AMOUNT_FMT»":   typst_string(total_fmt),
         "«TREASURER_PHRASE»":   typst_string(_treasurer_phrase(treasurer_name)),
-        "«TREASURER_CONTACT_SENTENCE»": typst_string(
-            _treasurer_contact_sentence(treasurer_name, treasurer_contact)
-        ),
         "«TERMS_BLOCK»":        _terms_block(kind, hard_cap),
     }
 
