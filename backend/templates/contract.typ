@@ -41,7 +41,14 @@
   footer: page_footer("Theta Xi Fraternity  ·  Hosting Contract"),
 )
 #set text(size: 10.5pt, font: standard_fonts, fill: ink)
-#set par(justify: false, leading: 0.74em, spacing: 3em, first-line-indent: 0pt)
+#set par(justify: false, leading: 0.74em, spacing: 1.0em, first-line-indent: 0pt)
+
+// Contract-only override: roomier spacing between the lettered subclause
+// items (1a, 2a, 2b, …). The invoice and credit memo keep the tighter
+// shared default (0.95em) so their terms pages stay on one page.
+#let subclause(label, body) = block(spacing: 1.8em, inset: (left: 0pt))[
+  #text(weight: "bold", fill: brand)[#label]  #body
+]
 
 // ===================== LETTERHEAD ====================================
 #letterhead("HOSTING CONTRACT", "Terms and Conditions")
