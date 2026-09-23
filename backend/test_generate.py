@@ -310,8 +310,9 @@ def test_contract_parties_preamble_single_org(client, auth_headers):
 
 @needs_typst
 def test_multi_org_contract_text(client, auth_headers):
-    """Two organizations: each is introduced as Club 1 / Club 2, and the body
-    refers to them collectively as the Renter (singular verb agreement)."""
+    """Two organizations: each is introduced as Organization 1 / Organization
+    2, and the body refers to them collectively as the Renter (singular verb
+    agreement)."""
     r = client.post(
         "/api/generate/contract",
         json=_contract_payload(club_names=["Alpha Club", "Beta Club"]),
@@ -319,12 +320,12 @@ def test_multi_org_contract_text(client, auth_headers):
     )
     assert r.status_code == 200
     text = _pdf_text(r.data)
-    assert 'Alpha Club ("Club 1")' in text
-    assert 'Beta Club ("Club 2")' in text
+    assert 'Alpha Club ("Organization 1")' in text
+    assert 'Beta Club ("Organization 2")' in text
     assert 'collectively referred to as the "Renter"' in text
     # The preamble introduces each organization and defines the term…
     assert (
-        'and Alpha Club ("Club 1") and Beta Club ("Club 2") '
+        'and Alpha Club ("Organization 1") and Beta Club ("Organization 2") '
         '(collectively referred to as the "Renter").'
     ) in text
     # …so Section 01 can use it directly, with singular verb agreement.
@@ -333,8 +334,8 @@ def test_multi_org_contract_text(client, auth_headers):
     assert "The Renter is solely responsible" in text
     # …while mid-sentence uses stay lowercase.
     assert "the full responsibility of the Renter" in text
-    # Both organizations get their own signature block.
-    assert text.count("Club 1") >= 2  # preamble + signature area
+    # Both organizations get their own signature row.
+    assert text.count("Organization 1") >= 2  # preamble + signature area
 
 
 @needs_typst
@@ -475,8 +476,8 @@ def test_contract_normalizes_lowercase_club_names(client, auth_headers):
     )
     assert r.status_code == 200
     text = _pdf_text(r.data)
-    assert 'Alpha Alpha ("Club 1")' in text
-    assert 'Alpha Beta ("Club 2")' in text
+    assert 'Alpha Alpha ("Organization 1")' in text
+    assert 'Alpha Beta ("Organization 2")' in text
     assert "alpha alpha" not in text
 
 

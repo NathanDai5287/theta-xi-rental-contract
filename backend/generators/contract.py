@@ -6,8 +6,9 @@ collected interactively — see CONTRACT_FIELDS for required keys.
 
 Multi-organization events: pass `club_names` (a list of names) instead of
 `club_name`. With two or more organizations the contract introduces each one
-— "Club 1", "Club 2", … — and then refers to them collectively as the
-"Renter" for the rest of the text (singular, so verb agreement holds).
+— "Organization 1", "Organization 2", … — and then refers to them
+collectively as the "Renter" for the rest of the text (singular, so verb
+agreement holds).
 
 Security: every user-supplied scalar is substituted into the template as an
 escaped string literal (see typst_string) and referenced with #TERM-style
@@ -25,7 +26,7 @@ from .base import english_list, normalize_org_name, render_typst, typst_string
 
 # (key, placeholder, prompt_label, hint)
 CONTRACT_FIELDS: list[tuple[str, str, str, str]] = [
-    ("club_name",  "«CLUB_NAME»",    "Club name",                      "e.g. Pi Sigma Delta"),
+    ("club_name",  "«CLUB_NAME»",    "Organization name",              "e.g. Pi Sigma Delta"),
     ("date",       "«EVENT_DATE»",   "Event date",                     "e.g. March 15, 2026"),
     ("start_time", "«START_TIME»",   "Start time (24-hour)",           "e.g. 22:00"),
     ("end_time",   "«END_TIME»",     "End time (24-hour)",             "e.g. 02:00"),
@@ -131,27 +132,27 @@ def _resolve_clubs(values: dict[str, Any]) -> list[str]:
         # than erroring — archived payloads may carry an empty club_names.
     single = normalize_org_name(str(values.get("club_name") or ""))
     if not single:
-        raise ValueError("missing required field: club_name (Club name)")
+        raise ValueError("missing required field: club_name (Organization name)")
     return [single]
 
 
 def _party_terms(clubs: list[str]) -> tuple[str, str, str, bool]:
     """
     Returns (term, parties, opening, multi):
-      term    — how the body refers to the renter: the club's own name, or
-                "the Renter" for multi-org events. Singular either way, so
-                the template's verb agreement ("is", "shall") holds.
+      term    — how the body refers to the renter: the organization's own
+                name, or "the Renter" for multi-org events. Singular either
+                way, so the template's verb agreement ("is", "shall") holds.
       parties — the renter side of the preamble's "by and between": the
-                club's own name, or the labeled list that introduces each
-                organization ("Club 1", "Club 2", …) and defines "the
-                Renter" for the rest of the document.
+                organization's own name, or the labeled list that introduces
+                each organization ("Organization 1", "Organization 2", …)
+                and defines "the Renter" for the rest of the document.
       opening — the Section 01 subject, e.g. 'Pi Sigma Delta hereby agrees'
                 or 'The Renter hereby agrees' once the preamble has defined
                 the term.
     """
     if len(clubs) == 1:
         return clubs[0], clubs[0], f"{clubs[0]} hereby agrees", False
-    labeled = [f'{name} ("Club {i}")' for i, name in enumerate(clubs, 1)]
+    labeled = [f'{name} ("Organization {i}")' for i, name in enumerate(clubs, 1)]
     parties = (
         english_list(labeled, article=None)
         + ' (collectively referred to as the "Renter")'
@@ -159,48 +160,38 @@ def _party_terms(clubs: list[str]) -> tuple[str, str, str, bool]:
     return "the Renter", parties, "The Renter hereby agrees", True
 
 
-def _renter_sig_column(clubs: list[str], multi: bool) -> str:
+def _renter_sig_rows(clubs: list[str], multi: bool) -> str:
     """
-    Typst markup for the renter side of the signature grid — one signature +
-    date block per organization in multi mode. References the template's
-    #TERM binding and #sig_cell helper. Club names are emitted as escaped
+    Typst markup for the renter execution rows — one row per organization,
+    stacked below the Theta Xi row. References the template's #sig_row
+    helper and #TERM binding. Organization names are emitted as escaped
     string literals (#"...") so they can never inject markup.
     """
     if not multi:
         return (
-            "[\n"
-            '  #text(size: 9.5pt, weight: "bold", fill: ink)[#TERM Executive Board]\n'
-            "  #v(8pt)\n"
-            '  #sig_cell([], "SIGNATURE", 54pt)\n'
-            "  #v(28pt)\n"
-            '  #sig_cell([], "DATE", 22pt)\n'
-            "]"
+            "#sig_row(\n"
+            '    [#text(size: 9.5pt, weight: "bold", fill: ink)'
+            "[#TERM Executive Board]],\n"
+            "    [],\n"
+            "    [],\n"
+            "    40pt,\n"
+            "  )"
         )
-    blocks: list[str] = []
+    rows: list[str] = []
     for i, name in enumerate(clubs, 1):
-        blocks.append(
-            "#stack(dir: ttb, spacing: 6pt)[\n"
-            f'    #text(size: 9.5pt, weight: "bold", fill: ink)[#"{typst_string(name)}"]\n'
-            f'    #text(size: 8pt, fill: muted)[Club {i}]\n'
-            "  ]\n"
-            '  #sig_cell([], "SIGNATURE", 40pt)\n'
-            "  #v(6pt)\n"
-            '  #sig_cell([], "DATE", 18pt)'
+        rows.append(
+            "#sig_row(\n"
+            "    [#stack(dir: ttb, spacing: 3pt)[\n"
+            f'      #text(size: 9.5pt, weight: "bold", fill: ink)'
+            f'[#"{typst_string(name)}"]\n'
+            f'      #text(size: 8pt, fill: muted)[Organization {i}]\n'
+            "    ]],\n"
+            "    [],\n"
+            "    [],\n"
+            "    40pt,\n"
+            "  )"
         )
-    if len(blocks) <= 5:
-        return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
-    # 6+ organizations: a single column overflows the execution block and
-    # typst silently clips the lowest signature off the page — a contract
-    # missing a party's signature line. Two columns keep ~10 on one page.
-    cells = "\n".join(f"    [{block}]," for block in blocks)
-    return (
-        "[\n#grid(\n"
-        "    columns: (1fr, 1fr),\n"
-        "    column-gutter: 20pt,\n"
-        "    row-gutter: 14pt,\n"
-        f"{cells}\n"
-        "  )\n]"
-    )
+    return "\n  #v(24pt)\n".join(rows)
 
 
 def generate_contract(values: dict[str, Any]) -> bytes:
@@ -383,8 +374,14 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             'regardless of cleanup tier.]'
         )
 
-    # ── Signature block: one renter signature per organization ──
-    repl["«RENTER_SIG_COLUMN»"] = _renter_sig_column(clubs, multi)
+    # ── Signature rows: Theta Xi first, then one per organization ──
+    repl["«RENTER_SIG_ROWS»"] = _renter_sig_rows(clubs, multi)
+    # The execution block is unbreakable so it never splits across pages —
+    # but an unbreakable block taller than one page gets its overflow
+    # silently clipped. Five or more renter organizations can exceed a
+    # page, so then (and only then) the rows are allowed to flow; each row
+    # is itself unbreakable, so no party's lines ever split.
+    repl["«SIG_BLOCK_BREAKABLE»"] = "true" if len(clubs) >= 5 else "false"
 
     if sign:
         d = datetime.date.today()

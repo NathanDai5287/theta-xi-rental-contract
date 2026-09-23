@@ -12,13 +12,14 @@
 // ── Party + event values ──────────────────────────────────────────────
 // Substituted by the Python generator as escaped string literals and
 // referenced with # — user input can never inject markup this way.
-//   TERM    — how the body refers to the renter: the club's own name, or
-//             "the Renter" for multi-organization events (see OPENING).
+//   TERM    — how the body refers to the renter: the organization's own
+//             name, or "the Renter" for multi-organization events (see
+//             OPENING).
 //   TERM_CAP — sentence-initial variant of TERM ("The Renter" for
 //             multi-organization events) so no sentence starts lowercase.
 //   PARTIES — the renter side of the preamble's "by and between": the
-//             club's own name, or the labeled list that introduces each
-//             organization and defines "the Renter".
+//             organization's own name, or the labeled list that introduces
+//             each organization and defines "the Renter".
 //   OPENING — the Section 01 subject, including "hereby agree(s)".
 #let TERM         = "«TERM»"
 #let TERM_CAP     = "«TERM_CAP»"
@@ -114,7 +115,12 @@ This Agreement constitutes the entire understanding between Theta Xi Fraternity 
 // ===================== SIGNATURES ====================================
 #v(28pt)
 
-#block(breakable: false)[
+// SIG_BLOCK_BREAKABLE is substituted by the generator: with 5+ renter
+// organizations the stacked rows can exceed a page, and an unbreakable
+// block taller than the page gets its overflow silently clipped — a
+// contract missing a party's signature line. In that case the rows flow
+// across pages (each row is itself unbreakable).
+#block(breakable: «SIG_BLOCK_BREAKABLE»)[
   #line(length: 100%, stroke: 1.2pt + brand)
   #v(6pt)
   #text(size: 8pt, weight: "medium", tracking: 1.6pt, fill: brand)[EXECUTION]
@@ -133,38 +139,42 @@ This Agreement constitutes the entire understanding between Theta Xi Fraternity 
     #text(size: 8pt, fill: muted, tracking: 0.5pt)[#label]
   ]
 
-  #grid(
-    columns: (1fr, 1fr),
-    column-gutter: 36pt,
-
-    // --- Theta Xi column ---
-    [
-      #text(size: 9.5pt, weight: "bold", fill: ink)[Theta Xi Fraternity Executive Board]
+  // One party's execution row: the party's name (plus its preamble label
+  // for multi-organization events) above a signature cell and a date cell
+  // side by side. Rows stack down the page, one per party.
+  #let sig_row(header, sig_overlay, date_overlay, gap) = [
+    #block(breakable: false)[
+      #header
       #v(8pt)
-      #sig_cell(
-        if SIGNED [
-          #place(bottom + left, dx: 10pt, dy: 6pt)[
-            #image("signature.png", height: 64pt)
-          ]
-        ],
-        "SIGNATURE",
-        54pt,
+      #grid(
+        columns: (2fr, 1fr),
+        column-gutter: 36pt,
+        sig_cell(sig_overlay, "SIGNATURE", gap),
+        sig_cell(date_overlay, "DATE", gap),
       )
-      #v(28pt)
-      #sig_cell(
-        if SIGNED [
-          #align(bottom + left)[
-            #pad(left: 6pt, bottom: 3pt)[
-              #text(size: 10.5pt, fill: ink)[#SIG_DATE]
-            ]
-          ]
-        ],
-        "DATE",
-        22pt,
-      )
-    ],
+    ]
+  ]
 
-    // --- Renter column: one signature block per organization ---
-    «RENTER_SIG_COLUMN»
+  // --- Theta Xi row — optionally pre-signed ---
+  #sig_row(
+    [#text(size: 9.5pt, weight: "bold", fill: ink)[Theta Xi Fraternity Executive Board]],
+    if SIGNED [
+      #place(bottom + left, dx: 10pt, dy: 6pt)[
+        #image("signature.png", height: 64pt)
+      ]
+    ],
+    if SIGNED [
+      #align(bottom + left)[
+        #pad(left: 6pt, bottom: 3pt)[
+          #text(size: 10.5pt, fill: ink)[#SIG_DATE]
+        ]
+      ]
+    ],
+    54pt,
   )
+
+  #v(24pt)
+
+  // --- Renter rows: one per organization ---
+  «RENTER_SIG_ROWS»
 ]
