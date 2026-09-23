@@ -116,10 +116,10 @@ This Agreement constitutes the entire understanding between Theta Xi Fraternity 
 #v(28pt)
 
 // SIG_BLOCK_BREAKABLE is substituted by the generator: with 5+ renter
-// organizations the stacked rows can exceed a page, and an unbreakable
-// block taller than the page gets its overflow silently clipped — a
-// contract missing a party's signature line. In that case the rows flow
-// across pages (each row is itself unbreakable).
+// organizations the right-hand column can exceed a page, and an
+// unbreakable block taller than the page gets its overflow silently
+// clipped — a contract missing a party's signature line. In that case the
+// block may flow across pages (each renter block is itself unbreakable).
 #block(breakable: «SIG_BLOCK_BREAKABLE»)[
   #line(length: 100%, stroke: 1.2pt + brand)
   #v(6pt)
@@ -139,42 +139,38 @@ This Agreement constitutes the entire understanding between Theta Xi Fraternity 
     #text(size: 8pt, fill: muted, tracking: 0.5pt)[#label]
   ]
 
-  // One party's execution row: the party's name (plus its preamble label
-  // for multi-organization events) above a signature cell and a date cell
-  // side by side. Rows stack down the page, one per party.
-  #let sig_row(header, sig_overlay, date_overlay, gap) = [
-    #block(breakable: false)[
-      #header
+  #grid(
+    columns: (1fr, 1fr),
+    column-gutter: 36pt,
+
+    // --- Theta Xi column — optionally pre-signed ---
+    [
+      #text(size: 9.5pt, weight: "bold", fill: ink)[Theta Xi Fraternity Executive Board]
       #v(8pt)
-      #grid(
-        columns: (2fr, 1fr),
-        column-gutter: 36pt,
-        sig_cell(sig_overlay, "SIGNATURE", gap),
-        sig_cell(date_overlay, "DATE", gap),
+      #sig_cell(
+        if SIGNED [
+          #place(bottom + left, dx: 10pt, dy: 6pt)[
+            #image("signature.png", height: 64pt)
+          ]
+        ],
+        "SIGNATURE",
+        54pt,
       )
-    ]
-  ]
+      #v(28pt)
+      #sig_cell(
+        if SIGNED [
+          #align(bottom + left)[
+            #pad(left: 6pt, bottom: 3pt)[
+              #text(size: 10.5pt, fill: ink)[#SIG_DATE]
+            ]
+          ]
+        ],
+        "DATE",
+        22pt,
+      )
+    ],
 
-  // --- Theta Xi row — optionally pre-signed ---
-  #sig_row(
-    [#text(size: 9.5pt, weight: "bold", fill: ink)[Theta Xi Fraternity Executive Board]],
-    if SIGNED [
-      #place(bottom + left, dx: 10pt, dy: 6pt)[
-        #image("signature.png", height: 64pt)
-      ]
-    ],
-    if SIGNED [
-      #align(bottom + left)[
-        #pad(left: 6pt, bottom: 3pt)[
-          #text(size: 10.5pt, fill: ink)[#SIG_DATE]
-        ]
-      ]
-    ],
-    54pt,
+    // --- Renter column: one row per organization ---
+    «RENTER_SIG_COLUMN»
   )
-
-  #v(24pt)
-
-  // --- Renter rows: one per organization ---
-  «RENTER_SIG_ROWS»
 ]

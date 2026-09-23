@@ -53,6 +53,11 @@
   total_color: accent_green,
 )
 
+// Refund details start on a fresh page so the memo summary above stands
+// alone — same layout contract as the invoices: page 1 numbers, page 2
+// details.
+#pagebreak()
+
 // ---- Body ----------------------------------------------------------
 #section("01", "Refund Summary")
 Theta Xi Fraternity hereby issues this credit memo to #CLUB_NAME for the refund of the security deposit collected under invoice #ORIGINAL_INVOICE in connection with the event held on #EVENT_DATE. The amount referenced above will be returned in full.

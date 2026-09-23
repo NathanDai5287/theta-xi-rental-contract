@@ -450,6 +450,75 @@ def test_deposit_invoice_unparseable_max_guests_defaults_200(client, auth_header
     assert "200 guests" in text
 
 
+# ── two-page layout: numbers on page 1, details on page 2 ─────────────
+
+def _pdf_pages(pdf_bytes: bytes) -> list[str]:
+    """Whitespace-normalized text per page, for page-position assertions."""
+    reader = pypdf.PdfReader(BytesIO(pdf_bytes))
+    return [" ".join((page.extract_text() or "").split()) for page in reader.pages]
+
+
+@needs_typst
+def test_deposit_invoice_two_pages_numbers_then_details(client, auth_headers):
+    """Layout contract for DEP/RNT/CM: page 1 is the bill (metadata + line
+    items + total), page 2 is the details. Never collapsed onto one page,
+    and the details never spill onto a third."""
+    r = client.post(
+        "/api/generate/invoice/deposit", json=_invoice_payload(), headers=auth_headers
+    )
+    assert r.status_code == 200
+    pages = _pdf_pages(r.data)
+    assert len(pages) == 2
+    assert "$500.00" in pages[0]
+    assert "Payment Instructions" not in pages[0]
+    assert "Payment Instructions" in pages[1]
+    assert "Security Deposit Terms" in pages[1]
+
+
+@needs_typst
+def test_rental_invoice_two_pages_with_line_items(client, auth_headers):
+    r = client.post(
+        "/api/generate/invoice/rental",
+        json=_invoice_payload(
+            amount=None,
+            line_items=[
+                {"description": "Venue rental", "amount": "1200"},
+                {"description": "Cleanup — basic", "amount": "150"},
+                {"description": "Fire permit fee", "amount": "125"},
+            ],
+        ),
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    pages = _pdf_pages(r.data)
+    assert len(pages) == 2
+    assert "$1,475.00" in pages[0]
+    assert "Payment Instructions" not in pages[0]
+    assert "Rental Fee Terms" in pages[1]
+
+
+@needs_typst
+def test_credit_memo_two_pages_numbers_then_details(client, auth_headers):
+    r = client.post(
+        "/api/generate/credit-memo",
+        json={
+            "club_name": "Pi Sigma Delta",
+            "event_date": "2026-03-15",
+            "amount": 500,
+            "issue_date": "March 20, 2026",
+            "original_invoice": "DEP-2026-0315-PISIGM",
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    pages = _pdf_pages(r.data)
+    assert len(pages) == 2
+    assert "$500.00" in pages[0]
+    assert "Refund Summary" not in pages[0]
+    assert "Refund Summary" in pages[1]
+    assert "Acknowledgement" in pages[1]
+
+
 # ── organization-name normalization ─────────────────────────────────────
 
 def test_normalize_org_name_unit():

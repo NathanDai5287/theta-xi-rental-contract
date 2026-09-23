@@ -160,38 +160,53 @@ def _party_terms(clubs: list[str]) -> tuple[str, str, str, bool]:
     return "the Renter", parties, "The Renter hereby agrees", True
 
 
-def _renter_sig_rows(clubs: list[str], multi: bool) -> str:
+def _renter_sig_column(clubs: list[str], multi: bool) -> str:
     """
-    Typst markup for the renter execution rows — one row per organization,
-    stacked below the Theta Xi row. References the template's #sig_row
-    helper and #TERM binding. Organization names are emitted as escaped
-    string literals (#"...") so they can never inject markup.
+    Typst markup for the renter column of the signature grid — one
+    signature + date block per organization in multi mode, stacked down
+    the right-hand column. References the template's #TERM binding and
+    #sig_cell helper. Organization names are emitted as escaped string
+    literals (#"...") so they can never inject markup.
     """
     if not multi:
         return (
-            "#sig_row(\n"
-            '    [#text(size: 9.5pt, weight: "bold", fill: ink)'
-            "[#TERM Executive Board]],\n"
-            "    [],\n"
-            "    [],\n"
-            "    40pt,\n"
-            "  )"
+            "[\n"
+            '  #text(size: 9.5pt, weight: "bold", fill: ink)[#TERM Executive Board]\n'
+            "  #v(8pt)\n"
+            '  #sig_cell([], "SIGNATURE", 54pt)\n'
+            "  #v(28pt)\n"
+            '  #sig_cell([], "DATE", 22pt)\n'
+            "]"
         )
-    rows: list[str] = []
+    blocks: list[str] = []
     for i, name in enumerate(clubs, 1):
-        rows.append(
-            "#sig_row(\n"
-            "    [#stack(dir: ttb, spacing: 3pt)[\n"
-            f'      #text(size: 9.5pt, weight: "bold", fill: ink)'
-            f'[#"{typst_string(name)}"]\n'
-            f'      #text(size: 8pt, fill: muted)[Organization {i}]\n'
-            "    ]],\n"
-            "    [],\n"
-            "    [],\n"
-            "    40pt,\n"
-            "  )"
+        # Each block is unbreakable: if the execution area ever flows
+        # across pages, a party's name and its lines stay together.
+        blocks.append(
+            "#block(breakable: false)[\n"
+            "  #stack(dir: ttb, spacing: 6pt)[\n"
+            f'    #text(size: 9.5pt, weight: "bold", fill: ink)[#"{typst_string(name)}"]\n'
+            f'    #text(size: 8pt, fill: muted)[Organization {i}]\n'
+            "  ]\n"
+            '  #sig_cell([], "SIGNATURE", 40pt)\n'
+            "  #v(6pt)\n"
+            '  #sig_cell([], "DATE", 18pt)\n'
+            "]"
         )
-    return "\n  #v(24pt)\n".join(rows)
+    if len(blocks) <= 5:
+        return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
+    # 6+ organizations: a single column overflows the execution block and
+    # typst silently clips the lowest signature off the page — a contract
+    # missing a party's signature line. Two columns keep ~10 on one page.
+    cells = "\n".join(f"    [{block}]," for block in blocks)
+    return (
+        "[\n#grid(\n"
+        "    columns: (1fr, 1fr),\n"
+        "    column-gutter: 20pt,\n"
+        "    row-gutter: 14pt,\n"
+        f"{cells}\n"
+        "  )\n]"
+    )
 
 
 def generate_contract(values: dict[str, Any]) -> bytes:
@@ -374,13 +389,15 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             'regardless of cleanup tier.]'
         )
 
-    # ── Signature rows: Theta Xi first, then one per organization ──
-    repl["«RENTER_SIG_ROWS»"] = _renter_sig_rows(clubs, multi)
+    # ── Signature block: Theta Xi on the left, one row per organization
+    #    down the right column ──
+    repl["«RENTER_SIG_COLUMN»"] = _renter_sig_column(clubs, multi)
     # The execution block is unbreakable so it never splits across pages —
     # but an unbreakable block taller than one page gets its overflow
-    # silently clipped. Five or more renter organizations can exceed a
-    # page, so then (and only then) the rows are allowed to flow; each row
-    # is itself unbreakable, so no party's lines ever split.
+    # silently clipped. Five renter organizations stacked in the right
+    # column comes within a few points of a full page, so from there the
+    # block is allowed to flow; each renter block is itself unbreakable,
+    # so no party's lines ever split.
     repl["«SIG_BLOCK_BREAKABLE»"] = "true" if len(clubs) >= 5 else "false"
 
     if sign:
