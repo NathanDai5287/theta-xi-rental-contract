@@ -25,6 +25,8 @@ from typing import Any, Iterable
 
 from flask import Flask, g
 
+from generators.base import normalize_org_name
+
 # backend/store.py -> backend/
 BACKEND_ROOT = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = BACKEND_ROOT / "orders.db"
@@ -327,6 +329,9 @@ def create_order(conn: sqlite3.Connection, body: Any) -> dict[str, Any]:
     club_name = body.get("clubName")
     if not isinstance(club_name, str) or not club_name.strip():
         raise ValueError("clubName is required")
+    # Print-normalized so the archive, the finance ledger, and any document
+    # regenerated from this order all show the same tidy name.
+    club_name = normalize_org_name(club_name)
     event_date = _validate_event_date(body.get("eventDate"))
     rental_price = _validate_number_or_none(body.get("rentalPrice"), "rentalPrice")
     deposit_amount = _validate_number_or_none(body.get("depositAmount"), "depositAmount")
@@ -356,7 +361,7 @@ def create_order(conn: sqlite3.Connection, body: Any) -> dict[str, Any]:
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            order_id, ts, ts, club_name.strip(), event_date,
+            order_id, ts, ts, club_name, event_date,
             rental_price, deposit_amount, None, notes, json.dumps(snapshot),
         ),
     )
@@ -380,7 +385,7 @@ def create_order(conn: sqlite3.Connection, body: Any) -> dict[str, Any]:
 
 
 _PATCHABLE_FIELDS = {
-    "clubName": ("club_name", lambda v: v if isinstance(v, str) and v.strip() else _raise("clubName must be a non-empty string")),
+    "clubName": ("club_name", lambda v: normalize_org_name(v) if isinstance(v, str) and v.strip() else _raise("clubName must be a non-empty string")),
     "eventDate": ("event_date", _validate_event_date),
     "rentalPrice": ("rental_price", lambda v: _validate_number_or_none(v, "rentalPrice")),
     "depositAmount": ("deposit_amount", lambda v: _validate_number_or_none(v, "depositAmount")),

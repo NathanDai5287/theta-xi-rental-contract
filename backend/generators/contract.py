@@ -20,7 +20,7 @@ import datetime
 import math
 from typing import Any, TypedDict
 
-from .base import english_list, render_typst, typst_string
+from .base import english_list, normalize_org_name, render_typst, typst_string
 
 
 # (key, placeholder, prompt_label, hint)
@@ -116,17 +116,20 @@ def _dedupe(clubs: list[str]) -> list[str]:
 
 
 def _resolve_clubs(values: dict[str, Any]) -> list[str]:
-    """One organization from club_name, or several from club_names."""
+    """One organization from club_name, or several from club_names. Names
+    are print-normalized (see normalize_org_name) before anything else —
+    deduping happens after normalization so "Alpha Club" and "alpha club"
+    collapse into one signature block."""
     raw = values.get("club_names")
     if raw is not None:
         if not isinstance(raw, list):
             raise ValueError("club_names must be a list of organization names")
-        clubs = [str(c).strip() for c in raw if str(c).strip()]
+        clubs = [normalize_org_name(str(c)) for c in raw if str(c).strip()]
         if clubs:
             return _dedupe(clubs)
         # An empty list falls through to the legacy single-name field rather
         # than erroring — archived payloads may carry an empty club_names.
-    single = str(values.get("club_name") or "").strip()
+    single = normalize_org_name(str(values.get("club_name") or ""))
     if not single:
         raise ValueError("missing required field: club_name (Club name)")
     return [single]
@@ -241,6 +244,10 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     #    with #TERM, #PRICE, … so user input stays inert text) ──
     repl: dict[str, str] = {
         "«TERM»":         typst_string(term),
+        # Sentence-initial variant: "The Renter" for multi-org events so a
+        # sentence never starts lowercase. Identical to TERM for a single
+        # organization (a proper noun is already capitalized).
+        "«TERM_CAP»":     typst_string("The Renter" if multi else term),
         "«OPENING»":      typst_string(opening),
         "«EVENT_DATE»":   typst_string(base["date"]),
         "«START_TIME»":   typst_string(base["start_time"]),
@@ -259,7 +266,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     repl["«END_DAY_PHRASE»"] = "" if same_day else " on the following day"
 
     repl["«GUEST_LIST_SENTENCE»"] = (
-        "#TERM shall provide a guest list to Theta Xi Fraternity "
+        "#TERM_CAP shall provide a guest list to Theta Xi Fraternity "
         "at least 5 days prior to the start of the event. "
         if guest_list else ""
     )
@@ -290,13 +297,13 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             '#subclause("4d.")[As attendance is expected to exceed 50 guests, Theta Xi '
             'Fraternity is required to obtain a special event fire permit from the City of '
             'Berkeley. A fee of \\$125.00 has been included in the rental fee to cover the '
-            'cost of this permit. #TERM agrees to comply with all '
+            'cost of this permit. #TERM_CAP agrees to comply with all '
             'fire safety regulations and occupancy limits specified by the permit.]\n\n'
-            '#subclause("4e.")[Permit Contingency. Theta Xi\'s ability to host more than '
+            '#subclause("4e.")[Permit Contingency. Theta Xi Fraternity\'s ability to host more than '
             '50 guests is contingent upon the approval of the City of Berkeley fire '
             'permit. If the permit is denied or cannot be obtained for any reason, '
-            'Theta Xi shall notify #TERM immediately. '
-            '#TERM may then elect to either (i) cancel the event for '
+            'Theta Xi Fraternity shall notify #TERM immediately. '
+            '#TERM_CAP may then elect to either (i) cancel the event for '
             'a full refund of all deposits and fees paid, or (ii) proceed with the '
             'event subject to a strict #strong[50-guest limit]. If the event proceeds under '
             'the 50-guest limit, the rental fee will be reduced according to the '
@@ -323,7 +330,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     cleared_keys = [k for k in areas if cleared.get(k)]
     if cleared_keys:
         cleared_desc = "; ".join(
-            f"the {AREA_LABELS[k]} (Theta Xi will move {AREA_CLEARING_DESC[k]})"
+            f"the {AREA_LABELS[k]} (Theta Xi Fraternity will move {AREA_CLEARING_DESC[k]})"
             for k in cleared_keys
         )
         repl["«SPACE_CLEARING_SUBCLAUSE»"] = (
@@ -352,22 +359,23 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             '#subclause("5c.")[Cleanup Tier — Full Service. Theta Xi Fraternity will provide '
             'full post-event cleanup services, including trash collection and disposal, '
             'wipe-down of obvious spills or sticky surfaces, and restoration of moved furniture '
-            'and items to their original positions. Theta Xi will mop the premises following '
-            'the event regardless of cleanup tier. Any personal property, decorations, or '
-            'equipment left behind by #TERM or its guests after the conclusion of the rental '
-            'period may be treated as abandoned property and may be discarded at Theta Xi '
-            'Fraternity\'s discretion; Theta Xi is not responsible for loss or damage to such '
+            'and items to their original positions. Theta Xi Fraternity will mop the premises '
+            'following the event regardless of cleanup tier. Any personal property, '
+            'decorations, or equipment left behind by #TERM or its guests after the '
+            'conclusion of the rental period may be treated as abandoned property and may '
+            'be discarded at Theta Xi Fraternity\'s discretion; Theta Xi Fraternity is not '
+            'responsible for loss or damage to such '
             'items.]'
         )
     else:
         repl["«CLEANUP_TIER_CLAUSE»"] = (
-            '#subclause("5c.")[Cleanup Tier — Basic. #TERM is responsible for collecting all '
+            '#subclause("5c.")[Cleanup Tier — Basic. #TERM_CAP is responsible for collecting all '
             'trash and disposables, placing them into bags, and disposing of them in the '
             'designated bins or dumpster, and for removing any personal property or decorations '
-            'brought in for the event. #TERM is also responsible for restoring any moved '
+            'brought in for the event. #TERM_CAP is also responsible for restoring any moved '
             'furniture or items to their original positions before the conclusion of the '
-            'rental period. Theta Xi will mop the premises following the event regardless of '
-            'cleanup tier.]'
+            'rental period. Theta Xi Fraternity will mop the premises following the event '
+            'regardless of cleanup tier.]'
         )
 
     # ── Signature block: one renter signature per organization ──

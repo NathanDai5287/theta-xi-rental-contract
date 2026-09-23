@@ -308,7 +308,10 @@ def test_multi_org_contract_text(client, auth_headers):
     assert 'Alpha Club ("Club 1")' in text
     assert 'Beta Club ("Club 2")' in text
     assert 'collectively referred to as the "Renter"' in text
-    assert "the Renter is solely responsible" in text
+    # Sentence-initial uses capitalize the defined term…
+    assert "The Renter is solely responsible" in text
+    # …while mid-sentence uses stay lowercase.
+    assert "the full responsibility of the Renter" in text
     # Both organizations get their own signature block.
     assert text.count("Club 1") >= 2  # opening + signature area
 
@@ -423,3 +426,74 @@ def test_deposit_invoice_unparseable_max_guests_defaults_200(client, auth_header
     assert r.status_code == 200
     text = _pdf_text(r.data)
     assert "200 guests" in text
+
+
+# ── organization-name normalization ─────────────────────────────────────
+
+def test_normalize_org_name_unit():
+    from generators.base import normalize_org_name
+
+    assert normalize_org_name("alpha alpha") == "Alpha Alpha"
+    assert normalize_org_name("Alpha alpha") == "Alpha Alpha"
+    assert normalize_org_name("ZBT") == "ZBT"                  # acronym survives
+    assert normalize_org_name("Pi Sigma Delta") == "Pi Sigma Delta"
+    assert normalize_org_name("  pi   sigma  ") == "Pi Sigma"  # whitespace collapses
+    assert normalize_org_name("sigma-alpha") == "Sigma-Alpha"
+    assert normalize_org_name("ZBT-Lambda") == "ZBT-Lambda"
+    assert normalize_org_name("") == ""
+
+
+@needs_typst
+def test_contract_normalizes_lowercase_club_names(client, auth_headers):
+    """Regression: a club typed "alpha alpha" used to print verbatim —
+    lowercase — in a signed contract."""
+    r = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(club_names=["alpha alpha", "alpha beta"]),
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    text = _pdf_text(r.data)
+    assert 'Alpha Alpha ("Club 1")' in text
+    assert 'Alpha Beta ("Club 2")' in text
+    assert "alpha alpha" not in text
+
+
+@needs_typst
+def test_invoice_normalizes_club_name(client, auth_headers):
+    r = client.post(
+        "/api/generate/invoice/deposit",
+        json=_invoice_payload(club_name="alpha alpha"),
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert "Alpha Alpha" in _pdf_text(r.data)
+
+
+@needs_typst
+def test_credit_memo_normalizes_club_name(client, auth_headers):
+    r = client.post(
+        "/api/generate/credit-memo",
+        json={
+            "club_name": "alpha alpha",
+            "event_date": "2026-03-15",
+            "amount": 100,
+            "issue_date": "March 20, 2026",
+            "original_invoice": "DEP-2026-0315-ALPHAA",
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert "Alpha Alpha" in _pdf_text(r.data)
+
+
+@needs_typst
+def test_contract_house_name_always_full_and_capitalized(client, auth_headers):
+    """The house is always "Theta Xi Fraternity" — a bare "Theta Xi" (or
+    worse, lowercase) never ships, regardless of caller input."""
+    r = client.post(
+        "/api/generate/contract", json=_contract_payload(), headers=auth_headers
+    )
+    assert r.status_code == 200
+    stripped = _pdf_text(r.data).replace("Theta Xi Fraternity", "")
+    assert "theta xi" not in stripped.lower()

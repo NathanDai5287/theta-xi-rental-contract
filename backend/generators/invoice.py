@@ -10,7 +10,14 @@ from __future__ import annotations
 import math
 from typing import Any, Literal
 
-from .base import fmt_currency, parse_event_date, render_typst, slug, typst_string
+from .base import (
+    fmt_currency,
+    normalize_org_name,
+    parse_event_date,
+    render_typst,
+    slug,
+    typst_string,
+)
 
 InvoiceKind = Literal["deposit", "rental"]
 
@@ -183,7 +190,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         if not values.get(k):
             raise ValueError(f"missing required field: {k}")
 
-    club        = str(values["club_name"]).strip()
+    club        = normalize_org_name(str(values["club_name"]))
     event_date  = str(values["event_date"]).strip()
     issue_date  = str(values["issue_date"]).strip()
     due_date    = str(values["due_date"]).strip()

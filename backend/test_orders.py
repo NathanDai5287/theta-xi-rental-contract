@@ -68,6 +68,29 @@ def _sample_document(**overrides):
     return doc
 
 
+def test_create_order_normalizes_club_name(client, auth_headers):
+    """The archive (and the finance ledger it feeds) stores the tidy,
+    print-normalized name — not whatever casing was typed."""
+    r = client.post(
+        "/api/orders", json=_sample_order(clubName="alpha alpha"), headers=auth_headers
+    )
+    assert r.status_code == 201
+    assert r.get_json()["order"]["clubName"] == "Alpha Alpha"
+
+
+def test_patch_order_normalizes_club_name(client, auth_headers):
+    created = client.post(
+        "/api/orders", json=_sample_order(), headers=auth_headers
+    ).get_json()["order"]
+    r = client.patch(
+        f"/api/orders/{created['id']}",
+        json={"clubName": "beta beta"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.get_json()["order"]["clubName"] == "Beta Beta"
+
+
 # ── auth ─────────────────────────────────────────────────────────────────
 
 def test_missing_key_rejected(client):

@@ -85,6 +85,30 @@ def slug(s: str) -> str:
     return result or "partner"
 
 
+def normalize_org_name(name: str) -> str:
+    """
+    Tidy an organization name for print: collapse runs of whitespace and
+    capitalize any word typed entirely in lowercase ("alpha alpha" →
+    "Alpha Alpha"). Words containing any uppercase letter are left exactly
+    as typed, so acronyms ("ZBT") and deliberate stylings survive, and
+    already-capitalized words are untouched. Every generator applies this
+    at the input boundary so a casually typed name can't ship lowercase in
+    a signed document. Mirrored by normalizeOrgName in the admin app's
+    lib/host-clubs.ts — keep the rules in sync.
+    """
+    def _fix_word(word: str) -> str:
+        # Hyphenated parts are judged independently: "sigma-alpha" →
+        # "Sigma-Alpha", while "ZBT-Lambda" keeps its acronym.
+        return "-".join(
+            part[:1].upper() + part[1:]
+            if part.isalpha() and part.islower()
+            else part
+            for part in word.split("-")
+        )
+
+    return " ".join(_fix_word(w) for w in name.split())
+
+
 def english_list(items: list[str], article: str | None = "the") -> str:
     if not items:
         return "no designated areas"
