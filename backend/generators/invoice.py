@@ -7,6 +7,7 @@ Invoice generator. Handles two kinds:
 """
 from __future__ import annotations
 
+import math
 from datetime import date
 from typing import Any, Literal
 
@@ -16,66 +17,80 @@ InvoiceKind = Literal["deposit", "rental"]
 
 
 def _parse_amount(v: Any) -> float:
-    """Accepts numbers or strings. Strips $ and commas."""
+    """Accepts numbers or strings. Strips $ and commas. Rejects non-finite
+    and negative amounts — an invoice for $nan or $-50 must not render."""
     if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).replace("$", "").replace(",", "").strip()
-    if not s:
-        raise ValueError("amount is empty")
-    return float(s)
+        f = float(v)
+    else:
+        s = str(v).replace("$", "").replace(",", "").strip()
+        if not s:
+            raise ValueError("amount is empty")
+        try:
+            f = float(s)
+        except ValueError:
+            raise ValueError(f"invalid amount: {v!r}") from None
+    if not math.isfinite(f) or f < 0:
+        raise ValueError(f"invalid amount: {v!r}")
+    return f
 
 
-def _terms_block(kind: InvoiceKind, club: str, hard_cap: int = 200) -> str:
-    """Returns typst markup for the kind-specific terms section(s)."""
+def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
+    """
+    Returns typst markup for the kind-specific terms section(s).
+
+    The club is referenced via the template's #CLUB_NAME string binding
+    rather than interpolated — this block lands in markup context, so an
+    interpolated name would be a markup-injection hole.
+    """
     if kind == "deposit":
         return (
-            f'#section("02", "Security Deposit Terms")\n'
-            f'This invoice represents the security deposit required to secure the rental '
-            f'of the Theta Xi Fraternity House. Payment of this deposit confirms {club}\'s '
-            f'agreement to the Hosting Contract executed for this event.\n\n'
-            f'#subclause("2a.")[The security deposit must be received in full no later than 1 hour before '
-            f'the event start time. The event will not be permitted to commence until '
-            f'this invoice is paid.]\n\n'
-            f'#subclause("2b.")[Upon receipt of the full rental fee following the event, '
-            f'and provided no breach of the Hosting Contract has occurred, the security '
-            f'deposit will be returned to {club} via a credit memo issued by Theta Xi '
-            f'Fraternity.]\n\n'
-            f'#section("03", "Conditions for Forfeiture")\n'
-            f'The security deposit is at risk of being forfeited, in whole or in part, '
-            f'under any of the conditions specified in the Hosting Contract, including '
-            f'but not limited to:\n\n'
-            f'#subclause("3a.")[Damage to, loss of, or theft of Theta Xi Fraternity '
-            f'property during the event. Repair or replacement costs are deducted from '
-            f'this deposit, and any excess remains owed by {club} (Section 06 of the '
-            f'Hosting Contract).]\n\n'
-            f'#subclause("3b.")[Failure to vacate the Fraternity House within the '
-            f'30-minute window following the conclusion of the rental period '
-            f'(Subclause 1a).]\n\n'
+            '#section("02", "Security Deposit Terms")\n'
+            'This invoice represents the security deposit required to secure the rental '
+            'of the Theta Xi Fraternity House. Payment of this deposit confirms #CLUB_NAME\'s '
+            'agreement to the Hosting Contract executed for this event.\n\n'
+            '#subclause("2a.")[The security deposit must be received in full no later than 1 hour before '
+            'the event start time. The event will not be permitted to commence until '
+            'this invoice is paid.]\n\n'
+            '#subclause("2b.")[Upon receipt of the full rental fee following the event, '
+            'and provided no breach of the Hosting Contract has occurred, the security '
+            'deposit will be returned to #CLUB_NAME via a credit memo issued by Theta Xi '
+            'Fraternity.]\n\n'
+            '#section("03", "Conditions for Forfeiture")\n'
+            'The security deposit is at risk of being forfeited, in whole or in part, '
+            'under any of the conditions specified in the Hosting Contract, including '
+            'but not limited to:\n\n'
+            '#subclause("3a.")[Damage to, loss of, or theft of Theta Xi Fraternity '
+            'property during the event. Repair or replacement costs are deducted from '
+            'this deposit, and any excess remains owed by #CLUB_NAME (Section 06 of the '
+            'Hosting Contract).]\n\n'
+            '#subclause("3b.")[Failure to vacate the Fraternity House within the '
+            '30-minute window following the conclusion of the rental period '
+            '(Subclause 1a).]\n\n'
             f'#subclause("3c.")[Attendance exceeding {hard_cap} guests, the maximum capacity '
-            f'of the Fraternity House (Subclause 4a).]\n\n'
-            f'#subclause("3d.")[Unauthorized access to restricted or prohibited areas '
-            f'of the Fraternity House (Section 08).]\n\n'
-            f'#subclause("3e.")[Failure to remit the rental fee within 2 days following '
-            f'the event (Subclause 2a).]\n\n'
-            f'#subclause("3f.")[Breach of any other term or condition outlined in the '
-            f'Hosting Contract (Section 09).]\n\n'
-            f'The security deposit is a separate obligation from the rental fee. Forfeiture '
-            f'of any portion of this deposit does not reduce or offset the rental fee owed.'
+            'of the Fraternity House (Subclause 4a).]\n\n'
+            '#subclause("3d.")[Unauthorized access to restricted or prohibited areas '
+            'of the Fraternity House (Section 08).]\n\n'
+            '#subclause("3e.")[Failure to remit the rental fee within 2 days following '
+            'the event (Subclause 2a).]\n\n'
+            '#subclause("3f.")[Breach of any other term or condition outlined in the '
+            'Hosting Contract (Section 09).]\n\n'
+            'The security deposit is a separate obligation from the rental fee. Forfeiture '
+            'of any portion of this deposit does not reduce or offset the rental fee owed.'
         )
     # rental
     return (
-        f'#section("02", "Rental Fee Terms")\n'
-        f'This invoice represents the full rental fee for use of the Theta Xi Fraternity '
-        f'House. Payment is due in full within 2 days following the conclusion of the '
-        f'event, in accordance with Section 02 of the Hosting Contract.\n\n'
-        f'#subclause("2a.")[Partial payment does not constitute settlement; the full '
-        f'rental fee remains due regardless of any amount remitted.]\n\n'
-        f'#subclause("2b.")[Failure to remit the rental fee within 2 days following the '
-        f'event entitles Theta Xi Fraternity to retain the security deposit in addition '
-        f'to pursuing collection of the outstanding rental fee.]\n\n'
-        f'#subclause("2c.")[{club} shall be liable for all reasonable costs incurred by '
-        f'Theta Xi Fraternity in pursuing collection of any outstanding balance, '
-        f'including but not limited to court filing fees and collection fees.]'
+        '#section("02", "Rental Fee Terms")\n'
+        'This invoice represents the full rental fee for use of the Theta Xi Fraternity '
+        'House. Payment is due in full within 2 days following the conclusion of the '
+        'event, in accordance with Section 02 of the Hosting Contract.\n\n'
+        '#subclause("2a.")[Partial payment does not constitute settlement; the full '
+        'rental fee remains due regardless of any amount remitted.]\n\n'
+        '#subclause("2b.")[Failure to remit the rental fee within 2 days following the '
+        'event entitles Theta Xi Fraternity to retain the security deposit in addition '
+        'to pursuing collection of the outstanding rental fee.]\n\n'
+        '#subclause("2c.")[#CLUB_NAME shall be liable for all reasonable costs incurred by '
+        'Theta Xi Fraternity in pursuing collection of any outstanding balance, '
+        'including but not limited to court filing fees and collection fees.]'
     )
 
 
@@ -226,10 +241,15 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
 
     # Deposit forfeiture clause 3c cites the contract's 4a cap: the house
     # capacity (200), or the agreed maximum guests when that's higher.
+    # Tolerant on purpose: archived payloads predate this field and must
+    # keep replaying, so anything missing/unparseable falls back to 200.
+    hard_cap = 200
     try:
-        hard_cap = max(200, int(float(str(values.get("max_guests") or "").strip())))
-    except ValueError:
-        hard_cap = 200
+        mg = float(str(values.get("max_guests") or "").replace(",", "").strip())
+        if math.isfinite(mg) and mg > 200:
+            hard_cap = int(mg)
+    except (ValueError, OverflowError):
+        pass
 
     repl: dict[str, str] = {
         "«INVOICE_KIND»":       kind,
@@ -247,7 +267,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         "«TREASURER_CONTACT_SENTENCE»": typst_string(
             _treasurer_contact_sentence(treasurer_name, treasurer_contact)
         ),
-        "«TERMS_BLOCK»":        _terms_block(kind, club, hard_cap),
+        "«TERMS_BLOCK»":        _terms_block(kind, hard_cap),
     }
 
     pdf = render_typst("invoice.typ", repl)

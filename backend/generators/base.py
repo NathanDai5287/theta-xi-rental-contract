@@ -9,6 +9,7 @@ All generators follow the same pattern:
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -32,6 +33,22 @@ class TypstCompileError(RuntimeError):
         super().__init__(f"typst compile failed (exit {returncode})\n{stderr}")
         self.stderr = stderr
         self.returncode = returncode
+
+
+class TypstTimeoutError(RuntimeError):
+    """Raised when typst compilation exceeds COMPILE_TIMEOUT_S."""
+
+
+class UnknownPlaceholderError(RuntimeError):
+    """The template has a token the generator supplied no value for —
+    template/generator drift is a server-side bug, never the caller's."""
+
+
+# A pathological (or injected) template must not pin a gunicorn worker forever.
+COMPILE_TIMEOUT_S = 60
+
+# Placeholders are guillemet-wrapped tokens on a single line.
+PLACEHOLDER_RE = re.compile(r"«[^»\n]+»")
 
 
 def find_typst() -> str:
@@ -67,10 +84,10 @@ def slug(s: str) -> str:
     return result or "partner"
 
 
-def english_list(items: list[str], article: str = "the") -> str:
+def english_list(items: list[str], article: str | None = "the") -> str:
     if not items:
         return "no designated areas"
-    prefixed = [f"{article} {item}" for item in items]
+    prefixed = [f"{article} {item}" if article else item for item in items]
     if len(prefixed) == 1:
         return prefixed[0]
     if len(prefixed) == 2:
@@ -114,9 +131,19 @@ def render_typst(template_name: str, replacements: Mapping[str, str]) -> bytes:
     if not template_path.is_file():
         raise FileNotFoundError(f"template not found: {template_path}")
 
-    src = template_path.read_text(encoding="utf-8")
-    for token, value in replacements.items():
-        src = src.replace(token, value)
+    # Single pass: re.sub never rescans replacement text, so a value that
+    # itself contains a «TOKEN» is inserted literally instead of being
+    # re-expanded (order-dependent cascade bug), and any token left over in
+    # the template fails loudly here instead of shipping in a legal document.
+    def _sub(m: re.Match[str]) -> str:
+        token = m.group(0)
+        if token not in replacements:
+            raise UnknownPlaceholderError(
+                f"{template_name}: no value supplied for {token}"
+            )
+        return replacements[token]
+
+    src = PLACEHOLDER_RE.sub(_sub, template_path.read_text(encoding="utf-8"))
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -135,11 +162,18 @@ def render_typst(template_name: str, replacements: Mapping[str, str]) -> bytes:
         typ_path.write_text(src, encoding="utf-8")
         out_pdf = tmp_path / "out.pdf"
 
-        result = subprocess.run(
-            [typst_bin, "compile", str(typ_path), str(out_pdf)],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                [typst_bin, "compile", str(typ_path), str(out_pdf)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=COMPILE_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            raise TypstTimeoutError(
+                f"typst compile exceeded {COMPILE_TIMEOUT_S}s for {template_name}"
+            ) from None
         if result.returncode != 0:
             raise TypstCompileError(result.stderr, result.returncode)
 

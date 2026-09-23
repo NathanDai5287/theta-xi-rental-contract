@@ -3,6 +3,7 @@ Credit memo generator. Issued when a security deposit is refunded.
 """
 from __future__ import annotations
 
+import math
 from datetime import date
 from typing import Any
 
@@ -10,12 +11,21 @@ from .base import fmt_currency, render_typst, slug, typst_string
 
 
 def _parse_amount(v: Any) -> float:
+    """Accepts numbers or strings. Strips $ and commas. Rejects non-finite
+    and negative amounts — a credit memo for $nan or $-50 must not render."""
     if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).replace("$", "").replace(",", "").strip()
-    if not s:
-        raise ValueError("amount is empty")
-    return float(s)
+        f = float(v)
+    else:
+        s = str(v).replace("$", "").replace(",", "").strip()
+        if not s:
+            raise ValueError("amount is empty")
+        try:
+            f = float(s)
+        except ValueError:
+            raise ValueError(f"invalid amount: {v!r}") from None
+    if not math.isfinite(f) or f < 0:
+        raise ValueError(f"invalid amount: {v!r}")
+    return f
 
 
 def _generate_memo_number(club: str, event_date: str, override: str | None) -> str:

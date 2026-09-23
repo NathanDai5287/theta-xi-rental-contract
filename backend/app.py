@@ -15,11 +15,11 @@ Routes:
   DELETE /api/orders/<id>            -> delete an order
   POST   /api/orders/<id>/documents  -> append a generated document to an order
 
-The generate/health routes accept unauthenticated requests from any origin
-(they're called directly from the browser). The orders routes are called
-server-to-server from the Next.js admin app only, so they require an
-`X-Admin-Key` header and are deliberately left out of the CORS allowlist
-below — see `_require_admin_key`.
+Every route except /api/health requires the `X-Admin-Key` header — see
+`_require_admin_key`. The generate routes are called server-to-server from
+the Next.js admin app's own backend (the browser never talks to this service
+directly), so no CORS headers are emitted for them; only /api/health is
+CORS-open so it can be probed from anywhere.
 
 Each generate/* route accepts JSON, returns application/pdf with a sensible
 filename.
@@ -31,6 +31,7 @@ Dev:
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 from functools import wraps
 from io import BytesIO
@@ -44,33 +45,61 @@ from generators import generate_contract, generate_credit_memo, generate_invoice
 from generators.base import (
     TypstCompileError,
     TypstNotFoundError,
+    TypstTimeoutError,
+    UnknownPlaceholderError,
     slug,
 )
+
+log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 store.init_app(app)
 
-# Allow the Next.js dev server (default :3000) and any other local origin to
-# call the PDF-generation + health routes. Deliberately scoped to just those
-# two path groups (rather than `r"/api/*"`) so `/api/orders*` gets no
-# Access-Control-Allow-Origin header at all — those routes are for
-# server-to-server calls from the Next app's own backend, never a browser.
-CORS(app, resources={r"/api/generate/*": {"origins": "*"}, r"/api/health": {"origins": "*"}})
+# Hard cap on request bodies. PDF payloads are a few KB of JSON at most;
+# anything bigger is either a mistake or an attempt to exhaust compile
+# resources. 413 is handled below.
+app.config["MAX_CONTENT_LENGTH"] = 256 * 1024
+
+# Only the health probe is callable cross-origin from a browser. Generate and
+# orders routes are server-to-server (the Next app's backend holds the admin
+# key), so they get no Access-Control-Allow-Origin header at all.
+CORS(app, resources={r"/api/health": {"origins": "*"}})
 
 
 @app.errorhandler(TypstNotFoundError)
 def _handle_no_typst(e: TypstNotFoundError):
-    return jsonify(error="typst_not_installed", detail=str(e)), 500
+    return jsonify(error="typst_not_installed"), 500
 
 
 @app.errorhandler(TypstCompileError)
 def _handle_typst_compile(e: TypstCompileError):
-    return jsonify(error="typst_compile_failed", detail=e.stderr, code=e.returncode), 500
+    # stderr can embed attacker-controlled input; log it server-side only.
+    log.error("typst compile failed (rc=%s):\n%s", e.returncode, e.stderr)
+    return jsonify(error="typst_compile_failed"), 500
+
+
+@app.errorhandler(TypstTimeoutError)
+def _handle_typst_timeout(e: TypstTimeoutError):
+    log.error("typst compile timed out: %s", e)
+    return jsonify(error="typst_timeout"), 500
+
+
+@app.errorhandler(UnknownPlaceholderError)
+def _handle_unknown_placeholder(e: UnknownPlaceholderError):
+    # Indicates a template/generator mismatch — a bug on our side, not the
+    # caller's. Log the token, return a generic 500.
+    log.error("unresolved template placeholder: %s", e)
+    return jsonify(error="template_error"), 500
 
 
 @app.errorhandler(ValueError)
 def _handle_value_error(e: ValueError):
     return jsonify(error="invalid_input", detail=str(e)), 400
+
+
+@app.errorhandler(413)
+def _handle_too_large(e):
+    return jsonify(error="payload_too_large"), 413
 
 
 def _pdf_response(pdf_bytes: bytes, filename: str):
@@ -82,12 +111,37 @@ def _pdf_response(pdf_bytes: bytes, filename: str):
     )
 
 
+def _require_admin_key(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """
+    Reject unless `X-Admin-Key` matches env `ADMIN_KEY`, using a constant-time
+    comparison. Fails closed: if ADMIN_KEY isn't configured on the server,
+    every request is rejected rather than treated as "no auth required" —
+    mirrors the fail-closed check the Next app itself does in front of us.
+    """
+
+    @wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any):
+        expected = os.environ.get("ADMIN_KEY")
+        provided = request.headers.get("X-Admin-Key")
+        if not expected or not provided:
+            return jsonify(error="unauthorized"), 401
+        # compare_digest raises TypeError on non-ASCII str; encode both sides
+        # so an exotic header value yields a 401 instead of a 500.
+        if not hmac.compare_digest(provided.encode("utf-8", "ignore"),
+                                   expected.encode("utf-8", "ignore")):
+            return jsonify(error="unauthorized"), 401
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
 @app.get("/api/health")
 def health():
     return jsonify(status="ok")
 
 
 @app.post("/api/generate/contract")
+@_require_admin_key
 def contract():
     payload = request.get_json(force=True, silent=False) or {}
     pdf = generate_contract(payload)
@@ -103,16 +157,19 @@ def _invoice_route(kind: str):
 
 
 @app.post("/api/generate/invoice/deposit")
+@_require_admin_key
 def invoice_deposit():
     return _invoice_route("deposit")
 
 
 @app.post("/api/generate/invoice/rental")
+@_require_admin_key
 def invoice_rental():
     return _invoice_route("rental")
 
 
 @app.post("/api/generate/credit-memo")
+@_require_admin_key
 def credit_memo():
     payload = request.get_json(force=True, silent=False) or {}
     pdf, number = generate_credit_memo(payload)
@@ -120,25 +177,6 @@ def credit_memo():
 
 
 # ── Orders API ──────────────────────────────────────────────────────────
-# Server-to-server only: gated by X-Admin-Key, and excluded from CORS above.
-
-def _require_admin_key(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """
-    Reject unless `X-Admin-Key` matches env `ADMIN_KEY`, using a constant-time
-    comparison. Fails closed: if ADMIN_KEY isn't configured on the server,
-    every request is rejected rather than treated as "no auth required" —
-    mirrors the fail-closed check the Next app itself does in front of us.
-    """
-
-    @wraps(fn)
-    def wrapper(*args: Any, **kwargs: Any):
-        expected = os.environ.get("ADMIN_KEY")
-        provided = request.headers.get("X-Admin-Key")
-        if not expected or not provided or not hmac.compare_digest(provided, expected):
-            return jsonify(error="unauthorized"), 401
-        return fn(*args, **kwargs)
-
-    return wrapper
 
 
 @app.get("/api/orders")

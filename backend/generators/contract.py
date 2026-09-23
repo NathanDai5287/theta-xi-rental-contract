@@ -3,13 +3,24 @@ Contract generator. Returns PDF bytes for a Theta Xi hosting contract.
 
 The shape of the input dict matches what the original render_contract.py
 collected interactively — see CONTRACT_FIELDS for required keys.
+
+Multi-organization events: pass `club_names` (a list of names) instead of
+`club_name`. With two or more organizations the contract introduces each one
+— "Club 1", "Club 2", … — and then refers to them collectively as the
+"Renter" for the rest of the text (singular, so verb agreement holds).
+
+Security: every user-supplied scalar is substituted into the template as an
+escaped string literal (see typst_string) and referenced with #TERM-style
+bindings — never spliced into markup. The only raw-markup substitutions are
+built below from fixed strings, computed numbers, and those same bindings.
 """
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any, TypedDict
 
-from .base import english_list, render_typst
+from .base import english_list, render_typst, typst_string
 
 
 # (key, placeholder, prompt_label, hint)
@@ -40,6 +51,7 @@ AREA_CLEARING_DESC: dict[str, str] = {
 class ContractInput(TypedDict, total=False):
     # required string fields
     club_name: str
+    club_names: list[str]           # multi-org events; overrides club_name
     date: str
     start_time: str       # "HH:MM"
     end_time: str         # "HH:MM"
@@ -59,18 +71,126 @@ class ContractInput(TypedDict, total=False):
 
 
 def _hhmm(s: str) -> tuple[int, int]:
-    h, m = s.split(":")
-    return int(h), int(m)
+    try:
+        h, m = s.split(":")
+        hh, mm = int(h), int(m)
+    except ValueError:
+        raise ValueError(f"invalid time: {s!r} (expected HH:MM)") from None
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        raise ValueError(f"invalid time: {s!r} (expected HH:MM)")
+    return hh, mm
+
+
+def _parse_money(value: str, label: str) -> float:
+    """Tolerant money parse ($ and commas allowed); rejects garbage/negatives."""
+    try:
+        v = float(str(value).replace("$", "").replace(",", "").strip())
+    except ValueError:
+        raise ValueError(f"invalid {label}: {value!r}") from None
+    if not math.isfinite(v) or v < 0:
+        raise ValueError(f"invalid {label}: {value!r}")
+    return v
+
+
+def _parse_count(value: str, label: str, *, minimum: int = 1) -> int:
+    """Whole-number counts. Normalizes '250.0' → 250; rejects 'abc', '-5'."""
+    try:
+        v = float(str(value).replace(",", "").strip())
+    except ValueError:
+        raise ValueError(f"invalid {label}: {value!r}") from None
+    if not math.isfinite(v) or not v.is_integer() or v < minimum:
+        raise ValueError(f"invalid {label}: {value!r}")
+    return int(v)
+
+
+def _resolve_clubs(values: dict[str, Any]) -> list[str]:
+    """One organization from club_name, or several from club_names."""
+    raw = values.get("club_names")
+    if raw is not None:
+        if not isinstance(raw, list):
+            raise ValueError("club_names must be a list of organization names")
+        clubs = [str(c).strip() for c in raw if str(c).strip()]
+        if not clubs:
+            raise ValueError("missing required field: club_name (Club name)")
+        return clubs
+    single = str(values.get("club_name") or "").strip()
+    if not single:
+        raise ValueError("missing required field: club_name (Club name)")
+    return [single]
+
+
+def _party_terms(clubs: list[str]) -> tuple[str, str, bool]:
+    """
+    Returns (term, opening, multi):
+      term    — how the body refers to the renter: the club's own name, or
+                "the Renter" for multi-org events. Singular either way, so
+                the template's verb agreement ("is", "shall") holds.
+      opening — the Section 01 subject, e.g. 'Pi Sigma Delta hereby agrees'
+                or 'A ("Club 1") and B ("Club 2") (collectively referred to
+                as the "Renter") hereby agree'.
+    """
+    if len(clubs) == 1:
+        return clubs[0], f"{clubs[0]} hereby agrees", False
+    labeled = [f'{name} ("Club {i}")' for i, name in enumerate(clubs, 1)]
+    opening = (
+        english_list(labeled, article=None)
+        + ' (collectively referred to as the "Renter") hereby agree'
+    )
+    return "the Renter", opening, True
+
+
+def _renter_sig_column(clubs: list[str], multi: bool) -> str:
+    """
+    Typst markup for the renter side of the signature grid — one signature +
+    date block per organization in multi mode. References the template's
+    #TERM binding and #sig_cell helper. Club names are emitted as escaped
+    string literals (#"...") so they can never inject markup.
+    """
+    if not multi:
+        return (
+            "[\n"
+            '  #text(size: 9.5pt, weight: "bold", fill: ink)[#TERM Executive Board]\n'
+            "  #v(8pt)\n"
+            '  #sig_cell([], "SIGNATURE", 54pt)\n'
+            "  #v(28pt)\n"
+            '  #sig_cell([], "DATE", 22pt)\n'
+            "]"
+        )
+    blocks: list[str] = []
+    for i, name in enumerate(clubs, 1):
+        blocks.append(
+            "#stack(dir: ttb, spacing: 6pt)[\n"
+            f'    #text(size: 9.5pt, weight: "bold", fill: ink)[#"{typst_string(name)}"]\n'
+            f'    #text(size: 8pt, fill: muted)[Club {i}]\n'
+            "  ]\n"
+            '  #sig_cell([], "SIGNATURE", 40pt)\n'
+            "  #v(6pt)\n"
+            '  #sig_cell([], "DATE", 18pt)'
+        )
+    return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
 
 
 def generate_contract(values: dict[str, Any]) -> bytes:
-    # ── Required string fields ──
+    # ── Required string fields (club identity resolved separately) ──
     base: dict[str, str] = {}
     for key, _placeholder, label, _hint in CONTRACT_FIELDS:
+        if key == "club_name":
+            continue
         v = values.get(key)
         if v is None or str(v).strip() == "":
             raise ValueError(f"missing required field: {key} ({label})")
         base[key] = str(v).strip()
+
+    clubs = _resolve_clubs(values)
+    term, opening, multi = _party_terms(clubs)
+
+    # ── Numeric validation (values still print as entered) ──
+    price_val = _parse_money(base["price"], "rental fee")
+    _parse_money(base["deposit"], "security deposit")
+    max_guests_num = _parse_count(base["max_guests"], "maximum guests")
+    base["max_guests"] = str(max_guests_num)
+    monitors_num = _parse_count(base["monitors"], "sober monitors", minimum=0)
+    base["monitors"] = str(monitors_num)
 
     same_day = _hhmm(base["end_time"]) > _hhmm(base["start_time"])
 
@@ -85,13 +205,29 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     lighting_system = bool(values.get("lighting_system"))
     sign            = bool(values.get("sign"))
 
-    # ── Build replacement map ──
-    repl: dict[str, str] = {placeholder: base[key] for key, placeholder, *_ in CONTRACT_FIELDS}
+    # ── Escaped string-literal bindings (the template references these
+    #    with #TERM, #PRICE, … so user input stays inert text) ──
+    repl: dict[str, str] = {
+        "«TERM»":         typst_string(term),
+        "«OPENING»":      typst_string(opening),
+        "«EVENT_DATE»":   typst_string(base["date"]),
+        "«START_TIME»":   typst_string(base["start_time"]),
+        "«END_TIME»":     typst_string(base["end_time"]),
+        "«PRICE»":        typst_string(base["price"]),
+        "«DEPOSIT»":      typst_string(base["deposit"]),
+        "«MAX_GUESTS»":   typst_string(base["max_guests"]),
+        "«NUM_MONITORS»": typst_string(base["monitors"]),
+        # Clause 4a's absolute cap is the house capacity (200), unless the
+        # agreed maximum is higher — then that number is the cap everywhere.
+        "«HARD_CAP»":     str(max(200, max_guests_num)),
+    }
 
+    # ── Raw-markup substitutions. Built from fixed strings, computed
+    #    numbers, and #TERM references — never from raw user input. ──
     repl["«END_DAY_PHRASE»"] = "" if same_day else " on the following day"
 
     repl["«GUEST_LIST_SENTENCE»"] = (
-        f"{base['club_name']} shall provide a guest list to Theta Xi Fraternity "
+        "#TERM shall provide a guest list to Theta Xi Fraternity "
         "at least 5 days prior to the start of the event. "
         if guest_list else ""
     )
@@ -111,63 +247,47 @@ def generate_contract(values: dict[str, Any]) -> bytes:
 
     repl["«ALLOWED_AREAS_LIST»"] = english_list([AREA_LABELS[k] for k in areas])
 
-    try:
-        max_guests_num = int(base["max_guests"])
-    except ValueError:
-        max_guests_num = 0
-
-    # Clause 4a's absolute cap is the house capacity (200), unless the agreed
-    # maximum is higher — then that number is the cap everywhere.
-    repl["«HARD_CAP»"] = str(max(200, max_guests_num))
-
     if max_guests_num > 50:
-        try:
-            price_val = float(base["price"])
-        except ValueError:
-            price_val = 0.0
-
-        # Calculate contingency price using the user's formula:
-        # ((price - 125) * (50 / max_guests)) * 0.75
+        # Contingency price formula: ((price - 125) * (50 / max_guests)) * 0.75
         base_for_scale = max(0.0, price_val - 125.0)
         scale_factor = 50.0 / max_guests_num
         contingency_price = (base_for_scale * scale_factor) * 0.75
         contingency_price_fmt = f"{contingency_price:,.2f}"
 
         repl["«FIRE_PERMIT_CLAUSE»"] = (
-            f'#subclause("4d.")[As attendance is expected to exceed 50 guests, Theta Xi '
-            f'Fraternity is required to obtain a special event fire permit from the City of '
-            f'Berkeley. A fee of \\$125.00 has been included in the rental fee to cover the '
-            f'cost of this permit. {base["club_name"]} agrees to comply with all '
-            f'fire safety regulations and occupancy limits specified by the permit.]\n\n'
-            f'#subclause("4e.")[Permit Contingency. Theta Xi\'s ability to host more than '
-            f'50 guests is contingent upon the approval of the City of Berkeley fire '
-            f'permit. If the permit is denied or cannot be obtained for any reason, '
-            f'Theta Xi shall notify {base["club_name"]} immediately. '
-            f'{base["club_name"]} may then elect to either (i) cancel the event for '
-            f'a full refund of all deposits and fees paid, or (ii) proceed with the '
-            f'event subject to a strict #strong[50-guest limit]. If the event proceeds under '
-            f'the 50-guest limit, the rental fee will be reduced according to the '
-            f'following procedure: first, the \\$125.00 permit fee is removed; second, '
-            f'the remaining balance is scaled proportionally to the reduced capacity '
+            '#subclause("4d.")[As attendance is expected to exceed 50 guests, Theta Xi '
+            'Fraternity is required to obtain a special event fire permit from the City of '
+            'Berkeley. A fee of \\$125.00 has been included in the rental fee to cover the '
+            'cost of this permit. #TERM agrees to comply with all '
+            'fire safety regulations and occupancy limits specified by the permit.]\n\n'
+            '#subclause("4e.")[Permit Contingency. Theta Xi\'s ability to host more than '
+            '50 guests is contingent upon the approval of the City of Berkeley fire '
+            'permit. If the permit is denied or cannot be obtained for any reason, '
+            'Theta Xi shall notify #TERM immediately. '
+            '#TERM may then elect to either (i) cancel the event for '
+            'a full refund of all deposits and fees paid, or (ii) proceed with the '
+            'event subject to a strict #strong[50-guest limit]. If the event proceeds under '
+            'the 50-guest limit, the rental fee will be reduced according to the '
+            'following procedure: first, the \\$125.00 permit fee is removed; second, '
+            'the remaining balance is scaled proportionally to the reduced capacity '
             f'(50/{max_guests_num}); and third, an additional 25% "inconvenience credit" '
-            f'is applied to the resulting total. For this event, the reduced '
+            'is applied to the resulting total. For this event, the reduced '
             f'contingency price is #strong[\\${contingency_price_fmt}].\n\n'
-            f'Should the event proceed at the reduced 50-guest capacity, '
-            f'{base["club_name"]} agrees to the following additional restrictions: '
-            f'attendance is strictly capped at 50 persons; music and noise levels must '
-            f'be kept at a significantly lower volume than originally planned; and all '
-            f'guests must remain inside the Fraternity House and are prohibited from '
-            f'crowding or loitering on the sidewalk or outdoor areas. Theta Xi '
-            f'Fraternity reserves the right to immediately terminate the event and '
-            f'retain the security deposit in full if attendance exceeds 50 persons '
-            f'or if guests fail to comply with these noise and indoor-only restrictions.]'
+            'Should the event proceed at the reduced 50-guest capacity, '
+            '#TERM agrees to the following additional restrictions: '
+            'attendance is strictly capped at 50 persons; music and noise levels must '
+            'be kept at a significantly lower volume than originally planned; and all '
+            'guests must remain inside the Fraternity House and are prohibited from '
+            'crowding or loitering on the sidewalk or outdoor areas. Theta Xi '
+            'Fraternity reserves the right to immediately terminate the event and '
+            'retain the security deposit in full if attendance exceeds 50 persons '
+            'or if guests fail to comply with these noise and indoor-only restrictions.]'
         )
     else:
         repl["«FIRE_PERMIT_CLAUSE»"] = ""
 
     # Subclause 5b — furniture restoration. Either Theta Xi clears items
     # ahead of time, or the renter is on the hook for restoring them.
-    club = base["club_name"]
     cleared_keys = [k for k in areas if cleared.get(k)]
     if cleared_keys:
         cleared_desc = "; ".join(
@@ -175,19 +295,19 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             for k in cleared_keys
         )
         repl["«SPACE_CLEARING_SUBCLAUSE»"] = (
-            f'#subclause("5b.")[For the following areas, Theta Xi Fraternity has agreed to '
-            f'clear items prior to the event and will restore them to their original positions '
+            '#subclause("5b.")[For the following areas, Theta Xi Fraternity has agreed to '
+            'clear items prior to the event and will restore them to their original positions '
             f'following the event: {cleared_desc}. In all other accessible areas, any furniture '
-            f'or items moved by {club} or its guests during the event must be returned to their '
-            f'original positions before the conclusion of the rental period. Failure to restore '
-            f'moved items will be treated as damage under Section 06.]'
+            'or items moved by #TERM or its guests during the event must be returned to their '
+            'original positions before the conclusion of the rental period. Failure to restore '
+            'moved items will be treated as damage under Section 06.]'
         )
     else:
         repl["«SPACE_CLEARING_SUBCLAUSE»"] = (
-            f'#subclause("5b.")[Any furniture or items moved by {club} or its guests during '
-            f'the event must be returned to their original positions before the conclusion of '
-            f'the rental period. Failure to restore moved items will be treated as damage '
-            f'under Section 06.]'
+            '#subclause("5b.")[Any furniture or items moved by #TERM or its guests during '
+            'the event must be returned to their original positions before the conclusion of the '
+            'rental period. Failure to restore moved items will be treated as damage '
+            'under Section 06.]'
         )
 
     # Subclause 5c — cleanup tier (derived from Pricing)
@@ -197,26 +317,29 @@ def generate_contract(values: dict[str, Any]) -> bytes:
 
     if cleanup_tier == "full":
         repl["«CLEANUP_TIER_CLAUSE»"] = (
-            f'#subclause("5c.")[Cleanup Tier — Full Service. Theta Xi Fraternity will provide '
-            f'full post-event cleanup services, including trash collection and disposal, '
-            f'wipe-down of obvious spills or sticky surfaces, and restoration of moved furniture '
-            f'and items to their original positions. Theta Xi will mop the premises following '
-            f'the event regardless of cleanup tier. Any personal property, decorations, or '
-            f'equipment left behind by {club} or its guests after the conclusion of the rental '
-            f'period may be treated as abandoned property and may be discarded at Theta Xi '
-            f'Fraternity\'s discretion; Theta Xi is not responsible for loss or damage to such '
-            f'items.]'
+            '#subclause("5c.")[Cleanup Tier — Full Service. Theta Xi Fraternity will provide '
+            'full post-event cleanup services, including trash collection and disposal, '
+            'wipe-down of obvious spills or sticky surfaces, and restoration of moved furniture '
+            'and items to their original positions. Theta Xi will mop the premises following '
+            'the event regardless of cleanup tier. Any personal property, decorations, or '
+            'equipment left behind by #TERM or its guests after the conclusion of the rental '
+            'period may be treated as abandoned property and may be discarded at Theta Xi '
+            'Fraternity\'s discretion; Theta Xi is not responsible for loss or damage to such '
+            'items.]'
         )
     else:
         repl["«CLEANUP_TIER_CLAUSE»"] = (
-            f'#subclause("5c.")[Cleanup Tier — Basic. {club} is responsible for collecting all '
-            f'trash and disposables, placing them into bags, and disposing of them in the '
-            f'designated bins or dumpster, and for removing any personal property or decorations '
-            f'brought in for the event. {club} is also responsible for restoring any moved '
-            f'furniture or items to their original positions before the conclusion of the '
-            f'rental period. Theta Xi will mop the premises following the event regardless of '
-            f'cleanup tier.]'
+            '#subclause("5c.")[Cleanup Tier — Basic. #TERM is responsible for collecting all '
+            'trash and disposables, placing them into bags, and disposing of them in the '
+            'designated bins or dumpster, and for removing any personal property or decorations '
+            'brought in for the event. #TERM is also responsible for restoring any moved '
+            'furniture or items to their original positions before the conclusion of the '
+            'rental period. Theta Xi will mop the premises following the event regardless of '
+            'cleanup tier.]'
         )
+
+    # ── Signature block: one renter signature per organization ──
+    repl["«RENTER_SIG_COLUMN»"] = _renter_sig_column(clubs, multi)
 
     if sign:
         d = datetime.date.today()

@@ -9,6 +9,23 @@
 #let SIGNED   = «IS_SIGNED»
 #let SIG_DATE = "«SIG_DATE»"
 
+// ── Party + event values ──────────────────────────────────────────────
+// Substituted by the Python generator as escaped string literals and
+// referenced with # — user input can never inject markup this way.
+//   TERM    — how the body refers to the renter: the club's own name, or
+//             "the Renter" for multi-organization events (see OPENING).
+//   OPENING — the Section 01 subject, including "hereby agree(s)".
+#let TERM         = "«TERM»"
+#let OPENING      = "«OPENING»"
+#let EVENT_DATE   = "«EVENT_DATE»"
+#let START_TIME   = "«START_TIME»"
+#let END_TIME     = "«END_TIME»"
+#let PRICE        = "«PRICE»"
+#let DEPOSIT      = "«DEPOSIT»"
+#let MAX_GUESTS   = "«MAX_GUESTS»"
+#let NUM_MONITORS = "«NUM_MONITORS»"
+#let HARD_CAP     = "«HARD_CAP»"
+
 #set document(title: "Theta Xi Hosting Contract")
 #set page(
   paper: "us-letter",
@@ -24,61 +41,61 @@
 // ===================== BODY ==========================================
 
 #section("01", "Rental Period")
-«CLUB_NAME» hereby agrees to rent the Theta Xi Fraternity premises located at 2639 Durant Avenue (hereinafter referred to as the "Fraternity House") for the purpose of hosting an event on «EVENT_DATE». The rental period will commence at «START_TIME» and conclude at «END_TIME»«END_DAY_PHRASE».
+#OPENING to rent the Theta Xi Fraternity premises located at 2639 Durant Avenue (hereinafter referred to as the "Fraternity House") for the purpose of hosting an event on #EVENT_DATE. The rental period will commence at #START_TIME and conclude at #END_TIME«END_DAY_PHRASE».
 
-#subclause("1a.")[«CLUB_NAME» shall have 30 minutes following the conclusion of the rental period to clean up and vacate the Fraternity House. Should «CLUB_NAME» or any of its guests fail to vacate the premises within this window, Theta Xi Fraternity reserves the right to retain the security deposit in full.]
+#subclause("1a.")[#TERM shall have 30 minutes following the conclusion of the rental period to clean up and vacate the Fraternity House. Should #TERM or any of its guests fail to vacate the premises within this window, Theta Xi Fraternity reserves the right to retain the security deposit in full.]
 
 #section("02", "Rental Fee")
-«CLUB_NAME» agrees to pay a rental fee of \$«PRICE» for the use of the Fraternity House for the event. The full rental fee is due within 2 days after the conclusion of the event. Accepted payment methods are cash, Zelle, or credit card (subject to a 3% processing surcharge). Rental fee is subject to change based on Theta Xi's Executive decision.
+#TERM agrees to pay a rental fee of \$#PRICE for the use of the Fraternity House for the event. The full rental fee is due within 2 days after the conclusion of the event. Accepted payment methods are cash, Zelle, or credit card (subject to a 3% processing surcharge). Rental fee is subject to change based on Theta Xi's Executive decision.
 
-#subclause("2a.")[«CLUB_NAME» shall provide a security deposit of \$«DEPOSIT», due in full no later than 1 hour before the event start time. If the security deposit is not received by that time, Theta Xi Fraternity reserves the right to cancel the event and terminate this Agreement. Upon receipt of the full rental fee, Theta Xi will return the \$«DEPOSIT» security deposit to «CLUB_NAME», subject to the conditions specified in this Agreement. The security deposit is a separate obligation from the rental fee; any forfeiture or retention of the security deposit by Theta Xi Fraternity does not reduce or offset the rental fee owed by «CLUB_NAME». Partial payment of the rental fee does not constitute settlement — the full rental fee remains due regardless of any amount remitted. Should the rental fee not be received within 2 days after the event, Theta Xi Fraternity reserves the right to retain the security deposit.]
+#subclause("2a.")[#TERM shall provide a security deposit of \$#DEPOSIT, due in full no later than 1 hour before the event start time. If the security deposit is not received by that time, Theta Xi Fraternity reserves the right to cancel the event and terminate this Agreement. Upon receipt of the full rental fee, Theta Xi will return the \$#DEPOSIT security deposit to #TERM, subject to the conditions specified in this Agreement. The security deposit is a separate obligation from the rental fee; any forfeiture or retention of the security deposit by Theta Xi Fraternity does not reduce or offset the rental fee owed by #TERM. Partial payment of the rental fee does not constitute settlement — the full rental fee remains due regardless of any amount remitted. Should the rental fee not be received within 2 days after the event, Theta Xi Fraternity reserves the right to retain the security deposit.]
 
-#subclause("2b.")[If either party cancels this Agreement prior to the event, no cancellation fee will be assessed. Any security deposit already paid by «CLUB_NAME» will be returned in full.]
+#subclause("2b.")[If either party cancels this Agreement prior to the event, no cancellation fee will be assessed. Any security deposit already paid by #TERM will be returned in full.]
 
-#subclause("2c.")[Should Theta Xi Fraternity be required to pursue collection of any outstanding balance under this Agreement, «CLUB_NAME» shall be liable for all reasonable costs incurred in doing so, including but not limited to court filing fees and collection fees.]
+#subclause("2c.")[Should Theta Xi Fraternity be required to pursue collection of any outstanding balance under this Agreement, #TERM shall be liable for all reasonable costs incurred in doing so, including but not limited to court filing fees and collection fees.]
 
 #section("03", "Attendance Restrictions")
-Fraternity brothers are not allowed to attend the event unless they are directly affiliated with «CLUB_NAME» or have been invited by «CLUB_NAME» representatives. The Fraternity shall respect and uphold this condition to ensure a secure and private event for «CLUB_NAME».
+Fraternity brothers are not allowed to attend the event unless they are directly affiliated with #TERM or have been invited by #TERM representatives. The Fraternity shall respect and uphold this condition to ensure a secure and private event for #TERM.
 
 #section("04", "Guest Authorization")
-«CLUB_NAME» is solely responsible for managing and verifying guest access to the event. «CLUB_NAME» shall ensure that only authorized guests are admitted to the Fraternity House. «GUEST_LIST_SENTENCE»Any damages, incidents, or liabilities arising from the conduct of admitted guests are the full responsibility of «CLUB_NAME».
+#TERM is solely responsible for managing and verifying guest access to the event. #TERM shall ensure that only authorized guests are admitted to the Fraternity House. «GUEST_LIST_SENTENCE»Any damages, incidents, or liabilities arising from the conduct of admitted guests are the full responsibility of #TERM.
 
-#subclause("4a.")[Attendance at the event shall not exceed «MAX_GUESTS» guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed «HARD_CAP» guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed «HARD_CAP» guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
+#subclause("4a.")[Attendance at the event shall not exceed #MAX_GUESTS guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed #HARD_CAP guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed #HARD_CAP guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
 
-#subclause("4b.")[«CLUB_NAME» must appoint «NUM_MONITORS» Sober Monitors, based on the total number of event attendees, to ensure responsible alcohol consumption and to act as representatives of the organization in case of emergency. These individuals must be clearly identifiable and capable of managing alcohol-related situations.]
+#subclause("4b.")[#TERM must appoint #NUM_MONITORS Sober Monitors, based on the total number of event attendees, to ensure responsible alcohol consumption and to act as representatives of the organization in case of emergency. These individuals must be clearly identifiable and capable of managing alcohol-related situations.]
 
 #subclause("4c.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and Members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
 
 «FIRE_PERMIT_CLAUSE»
 
 #section("05", "Use of Fraternity House Property")
-«CLUB_NAME» is hereby granted permission to utilize the Fraternity House for the duration of their event. «AMENITIES_SENTENCE»It is understood that «CLUB_NAME» is responsible for the respectful use of all property.
+#TERM is hereby granted permission to utilize the Fraternity House for the duration of their event. «AMENITIES_SENTENCE»It is understood that #TERM is responsible for the respectful use of all property.
 
-#subclause("5a.")[«CLUB_NAME» shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, «CLUB_NAME» shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
+#subclause("5a.")[#TERM shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, #TERM shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
 
 «SPACE_CLEARING_SUBCLAUSE»
 
 «CLEANUP_TIER_CLAUSE»
 
 #section("06", "Damages and Security Deposit")
-If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$«DEPOSIT» security deposit provided by «CLUB_NAME». If the cost of repairs or replacement exceeds \$«DEPOSIT», «CLUB_NAME» agrees to cover the additional expenses.
+If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$#DEPOSIT security deposit provided by #TERM. If the cost of repairs or replacement exceeds \$#DEPOSIT, #TERM agrees to cover the additional expenses.
 
-#subclause("6a.")[«CLUB_NAME» acknowledges and agrees that Theta Xi Fraternity, its officers, and members, shall not be liable for any injuries, damages, or losses that may occur to any party, or guest during the event. «CLUB_NAME» further agrees to bear all costs associated with such emergency services and Theta Xi Fraternity will not be held accountable for any claims, damages, or expenses arising out of or in connection with the use of such services.]
+#subclause("6a.")[#TERM acknowledges and agrees that Theta Xi Fraternity, its officers, and members, shall not be liable for any injuries, damages, or losses that may occur to any party, or guest during the event. #TERM further agrees to bear all costs associated with such emergency services and Theta Xi Fraternity will not be held accountable for any claims, damages, or expenses arising out of or in connection with the use of such services.]
 
 #section("07", "Excessive Waste Policy")
-In the event that excessive waste is not properly disposed of by «CLUB_NAME», following the conclusion of their event, such negligence will be classified under 'Damage to Property.' Theta Xi reserves the right to assess and impose necessary charges for the cleanup and disposal of this waste. For purposes of this Agreement, cleaning obligations are limited to the disposal of trash and garbage; «CLUB_NAME» is not responsible for mopping, sweeping, or any other deep cleaning of the premises.
+In the event that excessive waste is not properly disposed of by #TERM, following the conclusion of their event, such negligence will be classified under 'Damage to Property.' Theta Xi reserves the right to assess and impose necessary charges for the cleanup and disposal of this waste. For purposes of this Agreement, cleaning obligations are limited to the disposal of trash and garbage; #TERM is not responsible for mopping, sweeping, or any other deep cleaning of the premises.
 
 #section("08", "Restricted Areas")
-Guests of «CLUB_NAME» are permitted to access the following designated areas of the Fraternity House during the event: «ALLOWED_AREAS_LIST». Upstairs areas of the Fraternity House are strictly prohibited at all times. All other areas not listed above may only be entered when accompanied by a member of Theta Xi Fraternity. Any unauthorized access to restricted or prohibited areas will result in forfeiture of the \$«DEPOSIT» security deposit.
+Guests of #TERM are permitted to access the following designated areas of the Fraternity House during the event: «ALLOWED_AREAS_LIST». Upstairs areas of the Fraternity House are strictly prohibited at all times. All other areas not listed above may only be entered when accompanied by a member of Theta Xi Fraternity. Any unauthorized access to restricted or prohibited areas will result in forfeiture of the \$#DEPOSIT security deposit.
 
 #section("09", "Termination of Agreement")
-In the event of a breach of any of the terms and conditions outlined in this Agreement, Theta Xi Fraternity reserves the right to terminate the rental agreement, remove «CLUB_NAME» from the premises, and retain the security deposit.
+In the event of a breach of any of the terms and conditions outlined in this Agreement, Theta Xi Fraternity reserves the right to terminate the rental agreement, remove #TERM from the premises, and retain the security deposit.
 
 #section("10", "Governing Law")
 This Agreement is governed by the laws of the State of California, and any disputes arising from this Agreement will be resolved under applicable state laws.
 
 #section("11", "Entire Agreement")
-This Agreement constitutes the entire understanding between Theta Xi Fraternity and «CLUB_NAME» concerning the event rental. Any modifications or amendments to this Agreement must be made in writing and signed by both parties.
+This Agreement constitutes the entire understanding between Theta Xi Fraternity and #TERM concerning the event rental. Any modifications or amendments to this Agreement must be made in writing and signed by both parties.
 
 // ===================== SIGNATURES ====================================
 #v(28pt)
@@ -94,15 +111,6 @@ This Agreement constitutes the entire understanding between Theta Xi Fraternity 
 
   #v(20pt)
 
-  #grid(
-    columns: (1fr, 1fr),
-    column-gutter: 36pt,
-    text(size: 9.5pt, weight: "bold", fill: ink)[Theta Xi Fraternity Executive Board],
-    text(size: 9.5pt, weight: "bold", fill: ink)[«CLUB_NAME» Executive Board],
-  )
-
-  #v(8pt)
-
   // Helper: a signature/date cell with an optional overlay (image or text)
   #let sig_cell(overlay, label, gap) = [
     #box(width: 100%, height: gap)[#overlay]
@@ -114,32 +122,35 @@ This Agreement constitutes the entire understanding between Theta Xi Fraternity 
   #grid(
     columns: (1fr, 1fr),
     column-gutter: 36pt,
-    row-gutter: 28pt,
 
-    // --- Signature row ---
-    sig_cell(
-      if SIGNED [
-        #place(bottom + left, dx: 10pt, dy: 6pt)[
-          #image("signature.png", height: 64pt)
-        ]
-      ],
-      "SIGNATURE",
-      54pt,
-    ),
-    sig_cell([], "SIGNATURE", 54pt),
-
-    // --- Date row ---
-    sig_cell(
-      if SIGNED [
-        #align(bottom + left)[
-          #pad(left: 6pt, bottom: 3pt)[
-            #text(size: 10.5pt, fill: ink)[#SIG_DATE]
+    // --- Theta Xi column ---
+    [
+      #text(size: 9.5pt, weight: "bold", fill: ink)[Theta Xi Fraternity Executive Board]
+      #v(8pt)
+      #sig_cell(
+        if SIGNED [
+          #place(bottom + left, dx: 10pt, dy: 6pt)[
+            #image("signature.png", height: 64pt)
           ]
-        ]
-      ],
-      "DATE",
-      22pt,
-    ),
-    sig_cell([], "DATE", 22pt),
+        ],
+        "SIGNATURE",
+        54pt,
+      )
+      #v(28pt)
+      #sig_cell(
+        if SIGNED [
+          #align(bottom + left)[
+            #pad(left: 6pt, bottom: 3pt)[
+              #text(size: 10.5pt, fill: ink)[#SIG_DATE]
+            ]
+          ]
+        ],
+        "DATE",
+        22pt,
+      )
+    ],
+
+    // --- Renter column: one signature block per organization ---
+    «RENTER_SIG_COLUMN»
   )
 ]
