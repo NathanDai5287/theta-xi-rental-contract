@@ -63,7 +63,7 @@ Accepted payment methods are cash, Zelle, or credit card (subject to a 3% proces
 // Constant contact line — deliberately not interpolated with the
 // organization name(s): a long multi-organization name here can push the
 // details past one page. (@ is escaped — bare @ starts a typst reference.)
-#v(20pt)
+#v(12pt)
 
 #block(breakable: false)[
   #line(length: 100%, stroke: 1.2pt + brand)

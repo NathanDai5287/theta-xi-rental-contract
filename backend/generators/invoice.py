@@ -44,9 +44,12 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
     """
     Returns typst markup for the kind-specific terms section(s).
 
-    The club is referenced via the template's #CLUB_NAME string binding
-    rather than interpolated — this block lands in markup context, so an
-    interpolated name would be a markup-injection hole.
+    The organization is named in full once, in the opening sentence, via
+    the template's #CLUB_NAME string binding rather than interpolated —
+    this block lands in markup context, so an interpolated name would be
+    a markup-injection hole. Later clauses say "the Organization" (the
+    party named in the Bill To block): repeating a long multi-org list
+    several times can push the details page past one page.
     """
     if kind == "deposit":
         return (
@@ -59,7 +62,7 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
             'this invoice is paid.]\n\n'
             '#subclause("2b.")[Upon receipt of the full rental fee following the event, '
             'and provided no breach of the Hosting Contract has occurred, the security '
-            'deposit will be returned to #CLUB_NAME via a credit memo issued by Theta Xi '
+            'deposit will be returned to the Organization via a credit memo issued by Theta Xi '
             'Fraternity.]\n\n'
             '#section("03", "Conditions for Forfeiture")\n'
             'The security deposit is at risk of being forfeited, in whole or in part, '
@@ -67,7 +70,7 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
             'but not limited to:\n\n'
             '#subclause("3a.")[Damage to, loss of, or theft of Theta Xi Fraternity '
             'property during the event. Repair or replacement costs are deducted from '
-            'this deposit, and any excess remains owed by #CLUB_NAME (Section 06 of the '
+            'this deposit, and any excess remains owed by the Organization (Section 06 of the '
             'Hosting Contract).]\n\n'
             '#subclause("3b.")[Failure to vacate the Fraternity House within the '
             '30-minute window following the conclusion of the rental period '
@@ -94,7 +97,7 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
         '#subclause("2b.")[Failure to remit the rental fee within 2 days following the '
         'event entitles Theta Xi Fraternity to retain the security deposit in addition '
         'to pursuing collection of the outstanding rental fee.]\n\n'
-        '#subclause("2c.")[#CLUB_NAME shall be liable for all reasonable costs incurred by '
+        '#subclause("2c.")[The Organization shall be liable for all reasonable costs incurred by '
         'Theta Xi Fraternity in pursuing collection of any outstanding balance, '
         'including but not limited to court filing fees and collection fees.]'
     )

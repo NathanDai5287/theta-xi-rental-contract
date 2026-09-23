@@ -532,6 +532,10 @@ def test_normalize_org_name_unit():
     assert normalize_org_name("sigma-alpha") == "Sigma-Alpha"
     assert normalize_org_name("ZBT-Lambda") == "ZBT-Lambda"
     assert normalize_org_name("") == ""
+    # The list joiner stays lowercase mid-name: the admin app passes
+    # multi-org events as one pre-joined English list.
+    assert normalize_org_name("Alpha, Beta, and Gamma") == "Alpha, Beta, and Gamma"
+    assert normalize_org_name("and") == "And"  # first word still capitalizes
 
 
 @needs_typst

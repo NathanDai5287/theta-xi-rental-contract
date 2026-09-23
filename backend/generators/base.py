@@ -95,6 +95,11 @@ def normalize_org_name(name: str) -> str:
     at the input boundary so a casually typed name can't ship lowercase in
     a signed document. Mirrored by normalizeOrgName in the admin app's
     lib/host-clubs.ts — keep the rules in sync.
+
+    Exception: "and" stays lowercase unless it's the first word. The admin
+    app passes multi-organization events as one pre-joined English list
+    ("Alpha, Beta, and Gamma") — capitalizing the joiner would print
+    "Beta, And Gamma" in the document.
     """
     def _fix_word(word: str) -> str:
         # Hyphenated parts are judged independently: "sigma-alpha" →
@@ -106,7 +111,10 @@ def normalize_org_name(name: str) -> str:
             for part in word.split("-")
         )
 
-    return " ".join(_fix_word(w) for w in name.split())
+    return " ".join(
+        w if w == "and" and i > 0 else _fix_word(w)
+        for i, w in enumerate(name.split())
+    )
 
 
 def english_list(items: list[str], article: str | None = "the") -> str:
