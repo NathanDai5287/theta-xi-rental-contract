@@ -30,3 +30,6 @@ Thumbs.db
 # Vercel project linkage (local only)
 .vercel
 frontend/.vercel
+
+# Stray typst scratch dirs (created by elevated typst runs)
+typst-*/

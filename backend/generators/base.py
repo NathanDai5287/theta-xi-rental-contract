@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from datetime import date, datetime
 from pathlib import Path
 from typing import Mapping
 
@@ -98,6 +99,22 @@ def english_list(items: list[str], article: str | None = "the") -> str:
 def fmt_currency(amount: float | int) -> str:
     """`1500` → `$1,500.00`. Used by line items."""
     return f"${amount:,.2f}"
+
+
+def parse_event_date(value: str) -> date:
+    """
+    Best-effort parse of an event date for document numbering. Callers send
+    either ISO (`2026-03-15`) or the display format (`March 15, 2026`);
+    anything unparseable falls back to today rather than failing the
+    generation over a cosmetic number.
+    """
+    value = (value or "").strip()
+    for fmt in ("%Y-%m-%d", "%B %d, %Y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return date.today()
 
 
 def typst_string(s: str) -> str:

@@ -260,13 +260,38 @@ def test_multi_org_contract_text(client, auth_headers):
 
 
 @needs_typst
-def test_club_names_empty_list_falls_back_to_error(client, auth_headers):
+def test_club_names_empty_list_falls_back_to_club_name(client, auth_headers):
+    """An empty club_names list (archived/hand-crafted payloads) falls back
+    to the legacy single club_name rather than erroring."""
     r = client.post(
         "/api/generate/contract",
         json=_contract_payload(club_names=[]),
         headers=auth_headers,
     )
+    assert r.status_code == 200
+    text = _pdf_text(r.data)
+    assert "Pi Sigma Delta hereby agrees" in text
+
+
+def test_club_names_empty_list_without_club_name_errors(client, auth_headers):
+    r = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(club_name="", club_names=[]),
+        headers=auth_headers,
+    )
     assert r.status_code == 400
+
+
+@needs_typst
+def test_duplicate_club_names_sign_once(client, auth_headers):
+    r = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(club_names=["Alpha Club", "Alpha Club"]),
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    text = _pdf_text(r.data)
+    assert "Alpha Club hereby agrees" in text
 
 
 # ── injection resistance (needs typst + pypdf) ──────────────────────────

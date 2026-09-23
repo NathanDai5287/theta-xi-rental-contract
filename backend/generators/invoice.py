@@ -8,10 +8,9 @@ Invoice generator. Handles two kinds:
 from __future__ import annotations
 
 import math
-from datetime import date
 from typing import Any, Literal
 
-from .base import fmt_currency, render_typst, slug, typst_string
+from .base import fmt_currency, parse_event_date, render_typst, slug, typst_string
 
 InvoiceKind = Literal["deposit", "rental"]
 
@@ -142,11 +141,8 @@ def _generate_invoice_number(kind: InvoiceKind, club: str, event_date: str, over
     if override:
         return override
     prefix = "DEP" if kind == "deposit" else "RNT"
-    # Try to pull "YYYY-MMDD" out of an ISO date; fall back to today.
-    try:
-        d = date.fromisoformat(event_date)
-    except ValueError:
-        d = date.today()
+    # The number stamps the EVENT date; callers send it ISO or display-formatted.
+    d = parse_event_date(event_date)
     suffix = "".join(c for c in slug(club).upper() if c.isalnum())[:6] or "PARTNR"
     return f"{prefix}-{d:%Y-%m%d}-{suffix}"
 

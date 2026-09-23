@@ -4,10 +4,9 @@ Credit memo generator. Issued when a security deposit is refunded.
 from __future__ import annotations
 
 import math
-from datetime import date
 from typing import Any
 
-from .base import fmt_currency, render_typst, slug, typst_string
+from .base import fmt_currency, parse_event_date, render_typst, slug, typst_string
 
 
 def _parse_amount(v: Any) -> float:
@@ -31,10 +30,8 @@ def _parse_amount(v: Any) -> float:
 def _generate_memo_number(club: str, event_date: str, override: str | None) -> str:
     if override:
         return override
-    try:
-        d = date.fromisoformat(event_date)
-    except ValueError:
-        d = date.today()
+    # The number stamps the EVENT date; callers send it ISO or display-formatted.
+    d = parse_event_date(event_date)
     suffix = "".join(c for c in slug(club).upper() if c.isalnum())[:6] or "PARTNR"
     return f"CM-{d:%Y-%m%d}-{suffix}"
 

@@ -103,6 +103,18 @@ def _parse_count(value: str, label: str, *, minimum: int = 1) -> int:
     return int(v)
 
 
+def _dedupe(clubs: list[str]) -> list[str]:
+    """Exact duplicates sign once — two identical signature blocks for the
+    same organization would be confusing, not more binding."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for c in clubs:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
 def _resolve_clubs(values: dict[str, Any]) -> list[str]:
     """One organization from club_name, or several from club_names."""
     raw = values.get("club_names")
@@ -110,9 +122,10 @@ def _resolve_clubs(values: dict[str, Any]) -> list[str]:
         if not isinstance(raw, list):
             raise ValueError("club_names must be a list of organization names")
         clubs = [str(c).strip() for c in raw if str(c).strip()]
-        if not clubs:
-            raise ValueError("missing required field: club_name (Club name)")
-        return clubs
+        if clubs:
+            return _dedupe(clubs)
+        # An empty list falls through to the legacy single-name field rather
+        # than erroring — archived payloads may carry an empty club_names.
     single = str(values.get("club_name") or "").strip()
     if not single:
         raise ValueError("missing required field: club_name (Club name)")
@@ -167,7 +180,20 @@ def _renter_sig_column(clubs: list[str], multi: bool) -> str:
             "  #v(6pt)\n"
             '  #sig_cell([], "DATE", 18pt)'
         )
-    return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
+    if len(blocks) <= 5:
+        return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
+    # 6+ organizations: a single column overflows the execution block and
+    # typst silently clips the lowest signature off the page — a contract
+    # missing a party's signature line. Two columns keep ~10 on one page.
+    cells = "\n".join(f"    [{block}]," for block in blocks)
+    return (
+        "[\n#grid(\n"
+        "    columns: (1fr, 1fr),\n"
+        "    column-gutter: 20pt,\n"
+        "    row-gutter: 14pt,\n"
+        f"{cells}\n"
+        "  )\n]"
+    )
 
 
 def generate_contract(values: dict[str, Any]) -> bytes:

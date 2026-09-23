@@ -73,6 +73,6 @@ Accepted payment methods are cash, Zelle, or credit card (subject to a 3% proces
   #text(size: 9.5pt, fill: muted)[
     Questions about this invoice? #TREASURER_CONTACT_SENTENCE
     All terms herein are governed by, and incorporated into, the Hosting Contract executed
-    between #CLUB_NAME and Theta Xi Fraternity for the event on #EVENT_DATE.
+    between Theta Xi Fraternity and #CLUB_NAME for the event on #EVENT_DATE.
   ]
 ]
