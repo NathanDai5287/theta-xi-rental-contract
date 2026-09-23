@@ -41,7 +41,7 @@
   footer: page_footer("Theta Xi Fraternity  ·  Hosting Contract"),
 )
 #set text(size: 10.5pt, font: standard_fonts, fill: ink)
-#set par(justify: false, leading: 0.74em, spacing: 1.25em, first-line-indent: 0pt)
+#set par(justify: false, leading: 0.74em, spacing: 1.5em, first-line-indent: 0pt)
 
 // ===================== LETTERHEAD ====================================
 #letterhead("HOSTING CONTRACT", "Terms and Conditions")
