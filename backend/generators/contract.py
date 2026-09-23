@@ -135,24 +135,28 @@ def _resolve_clubs(values: dict[str, Any]) -> list[str]:
     return [single]
 
 
-def _party_terms(clubs: list[str]) -> tuple[str, str, bool]:
+def _party_terms(clubs: list[str]) -> tuple[str, str, str, bool]:
     """
-    Returns (term, opening, multi):
+    Returns (term, parties, opening, multi):
       term    — how the body refers to the renter: the club's own name, or
                 "the Renter" for multi-org events. Singular either way, so
                 the template's verb agreement ("is", "shall") holds.
+      parties — the renter side of the preamble's "by and between": the
+                club's own name, or the labeled list that introduces each
+                organization ("Club 1", "Club 2", …) and defines "the
+                Renter" for the rest of the document.
       opening — the Section 01 subject, e.g. 'Pi Sigma Delta hereby agrees'
-                or 'A ("Club 1") and B ("Club 2") (collectively referred to
-                as the "Renter") hereby agree'.
+                or 'The Renter hereby agrees' once the preamble has defined
+                the term.
     """
     if len(clubs) == 1:
-        return clubs[0], f"{clubs[0]} hereby agrees", False
+        return clubs[0], clubs[0], f"{clubs[0]} hereby agrees", False
     labeled = [f'{name} ("Club {i}")' for i, name in enumerate(clubs, 1)]
-    opening = (
+    parties = (
         english_list(labeled, article=None)
-        + ' (collectively referred to as the "Renter") hereby agree'
+        + ' (collectively referred to as the "Renter")'
     )
-    return "the Renter", opening, True
+    return "the Renter", parties, "The Renter hereby agrees", True
 
 
 def _renter_sig_column(clubs: list[str], multi: bool) -> str:
@@ -211,7 +215,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         base[key] = str(v).strip()
 
     clubs = _resolve_clubs(values)
-    term, opening, multi = _party_terms(clubs)
+    term, parties, opening, multi = _party_terms(clubs)
 
     # ── Numeric validation (values still print as entered) ──
     price_val = _parse_money(base["price"], "rental fee")
@@ -248,6 +252,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         # sentence never starts lowercase. Identical to TERM for a single
         # organization (a proper noun is already capitalized).
         "«TERM_CAP»":     typst_string("The Renter" if multi else term),
+        "«PARTIES»":      typst_string(parties),
         "«OPENING»":      typst_string(opening),
         "«EVENT_DATE»":   typst_string(base["date"]),
         "«START_TIME»":   typst_string(base["start_time"]),

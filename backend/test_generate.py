@@ -295,6 +295,20 @@ def test_single_org_contract_text(client, auth_headers):
 
 
 @needs_typst
+def test_contract_parties_preamble_single_org(client, auth_headers):
+    """The preamble names both parties up front — a contract that never
+    identifies the counterparty isn't much of a contract."""
+    r = client.post(
+        "/api/generate/contract", json=_contract_payload(), headers=auth_headers
+    )
+    text = _pdf_text(r.data)
+    assert (
+        "is entered into by and between Theta Xi Fraternity, located at "
+        "2639 Durant Avenue, Berkeley, California, and Pi Sigma Delta."
+    ) in text
+
+
+@needs_typst
 def test_multi_org_contract_text(client, auth_headers):
     """Two organizations: each is introduced as Club 1 / Club 2, and the body
     refers to them collectively as the Renter (singular verb agreement)."""
@@ -308,12 +322,19 @@ def test_multi_org_contract_text(client, auth_headers):
     assert 'Alpha Club ("Club 1")' in text
     assert 'Beta Club ("Club 2")' in text
     assert 'collectively referred to as the "Renter"' in text
+    # The preamble introduces each organization and defines the term…
+    assert (
+        'and Alpha Club ("Club 1") and Beta Club ("Club 2") '
+        '(collectively referred to as the "Renter").'
+    ) in text
+    # …so Section 01 can use it directly, with singular verb agreement.
+    assert "The Renter hereby agrees to rent" in text
     # Sentence-initial uses capitalize the defined term…
     assert "The Renter is solely responsible" in text
     # …while mid-sentence uses stay lowercase.
     assert "the full responsibility of the Renter" in text
     # Both organizations get their own signature block.
-    assert text.count("Club 1") >= 2  # opening + signature area
+    assert text.count("Club 1") >= 2  # preamble + signature area
 
 
 @needs_typst

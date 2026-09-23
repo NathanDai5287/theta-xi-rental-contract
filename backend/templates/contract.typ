@@ -16,9 +16,13 @@
 //             "the Renter" for multi-organization events (see OPENING).
 //   TERM_CAP — sentence-initial variant of TERM ("The Renter" for
 //             multi-organization events) so no sentence starts lowercase.
+//   PARTIES — the renter side of the preamble's "by and between": the
+//             club's own name, or the labeled list that introduces each
+//             organization and defines "the Renter".
 //   OPENING — the Section 01 subject, including "hereby agree(s)".
 #let TERM         = "«TERM»"
 #let TERM_CAP     = "«TERM_CAP»"
+#let PARTIES      = "«PARTIES»"
 #let OPENING      = "«OPENING»"
 #let EVENT_DATE   = "«EVENT_DATE»"
 #let START_TIME   = "«START_TIME»"
@@ -40,6 +44,13 @@
 
 // ===================== LETTERHEAD ====================================
 #letterhead("HOSTING CONTRACT", "Terms and Conditions")
+
+// ===================== PREAMBLE ======================================
+// Names both parties up front — a contract that never identifies the
+// counterparty isn't much of a contract. The house is always referenced
+// by its full name in the body, so no short defined term is introduced
+// for it here; multi-organization events define "the Renter" in #PARTIES.
+This Hosting Contract (this "Agreement") is entered into by and between Theta Xi Fraternity, located at 2639 Durant Avenue, Berkeley, California, and #PARTIES.
 
 // ===================== BODY ==========================================
 
