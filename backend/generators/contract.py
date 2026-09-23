@@ -116,6 +116,10 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     except ValueError:
         max_guests_num = 0
 
+    # Clause 4a's absolute cap is the house capacity (200), unless the agreed
+    # maximum is higher — then that number is the cap everywhere.
+    repl["«HARD_CAP»"] = str(max(200, max_guests_num))
+
     if max_guests_num > 50:
         try:
             price_val = float(base["price"])

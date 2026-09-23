@@ -25,7 +25,7 @@ def _parse_amount(v: Any) -> float:
     return float(s)
 
 
-def _terms_block(kind: InvoiceKind, club: str) -> str:
+def _terms_block(kind: InvoiceKind, club: str, hard_cap: int = 200) -> str:
     """Returns typst markup for the kind-specific terms section(s)."""
     if kind == "deposit":
         return (
@@ -51,7 +51,7 @@ def _terms_block(kind: InvoiceKind, club: str) -> str:
             f'#subclause("3b.")[Failure to vacate the Fraternity House within the '
             f'30-minute window following the conclusion of the rental period '
             f'(Subclause 1a).]\n\n'
-            f'#subclause("3c.")[Attendance exceeding 200 guests, the maximum capacity '
+            f'#subclause("3c.")[Attendance exceeding {hard_cap} guests, the maximum capacity '
             f'of the Fraternity House (Subclause 4a).]\n\n'
             f'#subclause("3d.")[Unauthorized access to restricted or prohibited areas '
             f'of the Fraternity House (Section 08).]\n\n'
@@ -156,6 +156,9 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
 
     Optional:
       invoice_number: override; otherwise auto-generated.
+      max_guests:     agreed maximum guests from the contract. The deposit
+                      invoice's forfeiture clause 3c cites the 4a attendance
+                      cap, which is max(200, max_guests). Defaults to 200.
 
     Returns (pdf_bytes, invoice_number).
     """
@@ -221,6 +224,13 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
     treasurer_name    = str(values.get("treasurer_name") or "").strip()
     treasurer_contact = str(values.get("treasurer_contact") or "").strip()
 
+    # Deposit forfeiture clause 3c cites the contract's 4a cap: the house
+    # capacity (200), or the agreed maximum guests when that's higher.
+    try:
+        hard_cap = max(200, int(float(str(values.get("max_guests") or "").strip())))
+    except ValueError:
+        hard_cap = 200
+
     repl: dict[str, str] = {
         "«INVOICE_KIND»":       kind,
         "«DOC_KIND_LABEL»":     typst_string(doc_kind_label),
@@ -237,7 +247,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         "«TREASURER_CONTACT_SENTENCE»": typst_string(
             _treasurer_contact_sentence(treasurer_name, treasurer_contact)
         ),
-        "«TERMS_BLOCK»":        _terms_block(kind, club),
+        "«TERMS_BLOCK»":        _terms_block(kind, club, hard_cap),
     }
 
     pdf = render_typst("invoice.typ", repl)
