@@ -220,11 +220,17 @@ def generate_contract(values: dict[str, Any]) -> bytes:
 
     same_day = _hhmm(base["end_time"]) > _hhmm(base["start_time"])
 
-    areas: list[str] = list(values.get("areas") or [])
+    raw_areas = values.get("areas") or []
+    if not isinstance(raw_areas, (list, tuple)):
+        raise ValueError("areas must be a list of area keys")
+    areas: list[str] = list(raw_areas)
     for a in areas:
         if a not in AREA_LABELS:
             raise ValueError(f"unknown area: {a}")
-    cleared: dict[str, bool] = dict(values.get("cleared") or {})
+    raw_cleared = values.get("cleared") or {}
+    if not isinstance(raw_cleared, dict):
+        raise ValueError("cleared must be an object mapping area keys to booleans")
+    cleared: dict[str, bool] = dict(raw_cleared)
 
     guest_list      = bool(values.get("guest_list"))
     sound_system    = bool(values.get("sound_system"))

@@ -207,6 +207,60 @@ def test_invoice_negative_amount_rejected(client, auth_headers):
     assert r.status_code == 400
 
 
+# ── malformed-but-authenticated bodies: clean 400s, never 500s ──────────
+
+def test_non_dict_body_rejected_on_all_generate_routes(client, auth_headers):
+    for path in (
+        "/api/generate/contract",
+        "/api/generate/invoice/deposit",
+        "/api/generate/invoice/rental",
+        "/api/generate/credit-memo",
+    ):
+        r = client.post(path, json=[1, 2, 3], headers=auth_headers)
+        assert r.status_code == 400, path
+        assert r.get_json()["error"] == "invalid_input", path
+
+
+def test_contract_areas_wrong_type_rejected(client, auth_headers):
+    r = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(areas=5),
+        headers=auth_headers,
+    )
+    assert r.status_code == 400
+
+
+def test_contract_cleared_wrong_type_rejected(client, auth_headers):
+    r = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(cleared=5),
+        headers=auth_headers,
+    )
+    assert r.status_code == 400
+
+
+def test_invoice_line_items_wrong_types_rejected(client, auth_headers):
+    for bad in ("nope", ["nope"], {"description": "x"}):
+        r = client.post(
+            "/api/generate/invoice/rental",
+            json=_invoice_payload(line_items=bad),
+            headers=auth_headers,
+        )
+        assert r.status_code == 400, bad
+
+
+@needs_typst
+def test_invoice_number_override_coerced_to_string(client, auth_headers):
+    """A JSON number as invoice_number must not 500 — it's normalized."""
+    r = client.post(
+        "/api/generate/invoice/deposit",
+        json=_invoice_payload(invoice_number=12345),
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert "12345" in r.headers["Content-Disposition"]
+
+
 # ── rendering (needs typst) ─────────────────────────────────────────────
 
 @needs_typst

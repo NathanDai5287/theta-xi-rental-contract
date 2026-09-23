@@ -29,7 +29,9 @@ def _parse_amount(v: Any) -> float:
 
 def _generate_memo_number(club: str, event_date: str, override: str | None) -> str:
     if override:
-        return override
+        # Callers occasionally send a JSON number; it becomes the download
+        # filename, so normalize to a stripped string.
+        return str(override).strip()
     # The number stamps the EVENT date; callers send it ISO or display-formatted.
     d = parse_event_date(event_date)
     suffix = "".join(c for c in slug(club).upper() if c.isalnum())[:6] or "PARTNR"

@@ -139,7 +139,9 @@ def _format_line_items(rows: list[tuple[str, str]]) -> str:
 
 def _generate_invoice_number(kind: InvoiceKind, club: str, event_date: str, override: str | None) -> str:
     if override:
-        return override
+        # Callers occasionally send a JSON number; it becomes the download
+        # filename, so normalize to a stripped string.
+        return str(override).strip()
     prefix = "DEP" if kind == "deposit" else "RNT"
     # The number stamps the EVENT date; callers send it ISO or display-formatted.
     d = parse_event_date(event_date)
@@ -193,10 +195,14 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
     # ── Build line items + total ──────────────────────────────────────
     raw_line_items = values.get("line_items")
     if raw_line_items and kind == "rental":
+        if not isinstance(raw_line_items, list):
+            raise ValueError("line_items must be a list of {description, amount} objects")
         # Itemized rental invoice
         rows: list[tuple[str, str]] = []
         total = 0.0
         for i, item in enumerate(raw_line_items):
+            if not isinstance(item, dict):
+                raise ValueError(f"line item #{i + 1} must be an object")
             desc = str((item.get("description") or "")).strip()
             if not desc:
                 raise ValueError(f"line item #{i + 1} is missing a description")

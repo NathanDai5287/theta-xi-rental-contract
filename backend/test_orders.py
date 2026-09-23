@@ -330,6 +330,14 @@ def test_create_order_numeric_fields_accept_null(client, auth_headers):
     assert order["depositAmount"] is None
 
 
+def test_create_order_numeric_field_rejects_non_finite(client, auth_headers):
+    # Python's json.loads accepts NaN/Infinity literals; SQLite would store
+    # them as NULL/Inf — silent corruption in the archive.
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        r = client.post("/api/orders", json=_sample_order(rentalPrice=bad), headers=auth_headers)
+        assert r.status_code == 400, bad
+
+
 # ── snapshot/payload round-trip, unicode + nesting ────────────────────────
 
 def test_snapshot_and_payload_round_trip_verbatim(client, auth_headers):

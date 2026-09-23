@@ -39,6 +39,7 @@ from typing import Any, Callable
 
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 import store
 from generators import generate_contract, generate_credit_memo, generate_invoice
@@ -102,6 +103,29 @@ def _handle_too_large(e):
     return jsonify(error="payload_too_large"), 413
 
 
+@app.errorhandler(Exception)
+def _handle_unexpected(e: Exception):
+    # Routing-level errors (404/405/…) are HTTPExceptions with their own
+    # status — pass them through. Anything else is a bug: log it with a
+    # traceback server-side, return a generic JSON 500 (never HTML, never
+    # internals).
+    if isinstance(e, HTTPException):
+        return e
+    log.exception("unhandled error")
+    return jsonify(error="internal_error"), 500
+
+
+def _json_body() -> dict[str, Any]:
+    """Request JSON, enforced to be an object — a top-level list/scalar
+    would otherwise surface as an AttributeError deep inside a generator."""
+    body = request.get_json(force=True, silent=False)
+    if body is None:
+        return {}
+    if not isinstance(body, dict):
+        raise ValueError("request body must be a JSON object")
+    return body
+
+
 def _pdf_response(pdf_bytes: bytes, filename: str):
     return send_file(
         BytesIO(pdf_bytes),
@@ -143,14 +167,14 @@ def health():
 @app.post("/api/generate/contract")
 @_require_admin_key
 def contract():
-    payload = request.get_json(force=True, silent=False) or {}
+    payload = _json_body()
     pdf = generate_contract(payload)
     club = slug(str(payload.get("club_name", "partner")))
     return _pdf_response(pdf, f"theta_xi_{club}_contract.pdf")
 
 
 def _invoice_route(kind: str):
-    payload = request.get_json(force=True, silent=False) or {}
+    payload = _json_body()
     payload["kind"] = kind
     pdf, number = generate_invoice(payload)
     return _pdf_response(pdf, f"{number}.pdf")
@@ -171,7 +195,7 @@ def invoice_rental():
 @app.post("/api/generate/credit-memo")
 @_require_admin_key
 def credit_memo():
-    payload = request.get_json(force=True, silent=False) or {}
+    payload = _json_body()
     pdf, number = generate_credit_memo(payload)
     return _pdf_response(pdf, f"{number}.pdf")
 

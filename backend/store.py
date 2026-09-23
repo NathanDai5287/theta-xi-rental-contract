@@ -15,6 +15,7 @@ requests on different threads.
 from __future__ import annotations
 
 import json
+import math
 import re
 import secrets
 import sqlite3
@@ -169,6 +170,10 @@ def _validate_number_or_none(value: Any, field: str) -> float | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field} must be a number or null")
+    # Python's json.loads accepts NaN/Infinity literals; SQLite would store
+    # them as NULL/Inf and jsonify would emit non-standard tokens later.
+    if not math.isfinite(value):
+        raise ValueError(f"{field} must be finite")
     return float(value)
 
 
