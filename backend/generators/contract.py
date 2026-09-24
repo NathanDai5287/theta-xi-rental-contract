@@ -296,12 +296,12 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         contingency_price_fmt = f"{contingency_price:,.2f}"
 
         repl["«FIRE_PERMIT_CLAUSE»"] = (
-            '#subclause("4d.")[As attendance is expected to exceed 50 guests, Theta Xi '
+            '#subclause("3d.")[As attendance is expected to exceed 50 guests, Theta Xi '
             'Fraternity is required to obtain a special event fire permit from the City of '
             'Berkeley. A fee of \\$125.00 has been included in the rental fee to cover the '
             'cost of this permit. #TERM_CAP agrees to comply with all '
             'fire safety regulations and occupancy limits specified by the permit.]\n\n'
-            '#subclause("4e.")[Permit Contingency. Theta Xi Fraternity\'s ability to host more than '
+            '#subclause("3e.")[Permit Contingency. Theta Xi Fraternity\'s ability to host more than '
             '50 guests is contingent upon the approval of the City of Berkeley fire '
             'permit. If the permit is denied or cannot be obtained for any reason, '
             'Theta Xi Fraternity shall notify #TERM immediately. '
@@ -327,7 +327,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     else:
         repl["«FIRE_PERMIT_CLAUSE»"] = ""
 
-    # Subclause 5b — furniture restoration. Either Theta Xi clears items
+    # Subclause 4b — furniture restoration. Either Theta Xi clears items
     # ahead of time, or the renter is on the hook for restoring them.
     cleared_keys = [k for k in areas if cleared.get(k)]
     if cleared_keys:
@@ -336,29 +336,29 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             for k in cleared_keys
         )
         repl["«SPACE_CLEARING_SUBCLAUSE»"] = (
-            '#subclause("5b.")[For the following areas, Theta Xi Fraternity has agreed to '
+            '#subclause("4b.")[For the following areas, Theta Xi Fraternity has agreed to '
             'clear items prior to the event and will restore them to their original positions '
             f'following the event: {cleared_desc}. In all other accessible areas, any furniture '
             'or items moved by #TERM or its guests during the event must be returned to their '
             'original positions before the conclusion of the rental period. Failure to restore '
-            'moved items will be treated as damage under Section 06.]'
+            'moved items will be treated as damage under Section 05.]'
         )
     else:
         repl["«SPACE_CLEARING_SUBCLAUSE»"] = (
-            '#subclause("5b.")[Any furniture or items moved by #TERM or its guests during '
+            '#subclause("4b.")[Any furniture or items moved by #TERM or its guests during '
             'the event must be returned to their original positions before the conclusion of the '
             'rental period. Failure to restore moved items will be treated as damage '
-            'under Section 06.]'
+            'under Section 05.]'
         )
 
-    # Subclause 5c — cleanup tier (derived from Pricing)
+    # Subclause 4c — cleanup tier (derived from Pricing)
     cleanup_tier = str(values.get("cleanup_tier") or "basic").strip().lower()
     if cleanup_tier not in ("basic", "full"):
         raise ValueError("cleanup_tier must be 'basic' or 'full'")
 
     if cleanup_tier == "full":
         repl["«CLEANUP_TIER_CLAUSE»"] = (
-            '#subclause("5c.")[Cleanup Tier — Full Service. Theta Xi Fraternity will provide '
+            '#subclause("4c.")[Cleanup Tier — Full Service. Theta Xi Fraternity will provide '
             'full post-event cleanup services, including trash collection and disposal, '
             'wipe-down of obvious spills or sticky surfaces, and restoration of moved furniture '
             'and items to their original positions. Theta Xi Fraternity will mop the premises '
@@ -371,7 +371,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         )
     else:
         repl["«CLEANUP_TIER_CLAUSE»"] = (
-            '#subclause("5c.")[Cleanup Tier — Basic. #TERM_CAP is responsible for collecting all '
+            '#subclause("4c.")[Cleanup Tier — Basic. #TERM_CAP is responsible for collecting all '
             'trash and disposables, placing them into bags, and disposing of them in the '
             'designated bins or dumpster, and for removing any personal property or decorations '
             'brought in for the event. #TERM_CAP is also responsible for restoring any moved '

@@ -76,47 +76,50 @@ This Hosting Contract (this "Agreement") is entered into by and between Theta Xi
 
 #subclause("2c.")[Should Theta Xi Fraternity be required to pursue collection of any outstanding balance under this Agreement, #TERM shall be liable for all reasonable costs incurred in doing so, including but not limited to court filing fees and collection fees.]
 
-#section("03", "Attendance Restrictions")
-Fraternity brothers are not allowed to attend the event unless they are directly affiliated with #TERM or have been invited by #TERM representatives. Theta Xi Fraternity shall respect and uphold this condition to ensure a secure and private event for #TERM.
+// NOTE: "Attendance Restrictions" section removed 2026-09-24. Original text kept
+// below in case we want to restore it verbatim (if restored, renumber the
+// following sections back up by one):
+// #section("03", "Attendance Restrictions")
+// Fraternity brothers are not allowed to attend the event unless they are directly affiliated with #TERM or have been invited by #TERM representatives. Theta Xi Fraternity shall respect and uphold this condition to ensure a secure and private event for #TERM.
 
-#section("04", "Guest Authorization")
+#section("03", "Guest Authorization")
 #TERM_CAP is solely responsible for managing and verifying guest access to the event. #TERM shall ensure that only authorized guests are admitted to the Fraternity House. «GUEST_LIST_SENTENCE»Any damages, incidents, or liabilities arising from the conduct of admitted guests are the full responsibility of #TERM.
 
-#subclause("4a.")[Attendance at the event shall not exceed #MAX_GUESTS guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed #HARD_CAP guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed #HARD_CAP guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
+#subclause("3a.")[Attendance at the event shall not exceed #MAX_GUESTS guests. Exceeding this number requires prior written approval from Theta Xi Fraternity. Under no circumstances may attendance exceed #HARD_CAP guests, as this is the maximum capacity of the Fraternity House. Should attendance exceed #HARD_CAP guests, Theta Xi Fraternity reserves the right to retain the security deposit and terminate the event immediately.]
 
-#subclause("4b.")[#TERM_CAP must appoint #NUM_MONITORS Sober Monitors, based on the total number of event attendees, to ensure responsible alcohol consumption and to act as representatives of the organization in case of emergency. These individuals must be clearly identifiable and capable of managing alcohol-related situations.]
+#subclause("3b.")[#TERM_CAP must appoint #NUM_MONITORS Sober Monitors, based on the total number of event attendees, to ensure responsible alcohol consumption and to act as representatives of the organization in case of emergency. These individuals must be clearly identifiable and capable of managing alcohol-related situations.]
 
-#subclause("4c.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
+#subclause("3c.")[Theta Xi Fraternity will *NOT* be held responsible nor liable for emergency events and members of Theta Xi Fraternity are permitted to step in at their discretion on the grounds of preventing any potential risk.]
 
 «FIRE_PERMIT_CLAUSE»
 
-#section("05", "Use of Fraternity House Property")
+#section("04", "Use of Fraternity House Property")
 #TERM_CAP is hereby granted permission to utilize the Fraternity House for the duration of its event. «AMENITIES_SENTENCE»It is understood that #TERM is responsible for the respectful use of all property.
 
-#subclause("5a.")[#TERM_CAP shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, #TERM shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
+#subclause("4a.")[#TERM_CAP shall ensure that all event activities comply with applicable local noise ordinances and City of Berkeley regulations. Should law enforcement or city officials respond to a noise complaint arising from the event, #TERM shall bear full responsibility for the situation and shall be liable for any associated fines, fees, or costs incurred.]
 
 «SPACE_CLEARING_SUBCLAUSE»
 
 «CLEANUP_TIER_CLAUSE»
 
-#section("06", "Damages and Security Deposit")
+#section("05", "Damages and Security Deposit")
 If any furniture or house property belonging to Theta Xi Fraternity is damaged, lost, or stolen during the event, the cost of repairs or replacement will be deducted from the \$#DEPOSIT security deposit provided by #TERM. If the cost of repairs or replacement exceeds \$#DEPOSIT, #TERM agrees to cover the additional expenses.
 
-#subclause("6a.")[#TERM_CAP acknowledges and agrees that Theta Xi Fraternity, its officers, and members, shall not be liable for any injuries, damages, or losses that may occur to any party or guest during the event. #TERM_CAP further agrees to bear all costs associated with such emergency services and Theta Xi Fraternity will not be held accountable for any claims, damages, or expenses arising out of or in connection with the use of such services.]
+#subclause("5a.")[#TERM_CAP acknowledges and agrees that Theta Xi Fraternity, its officers, and members, shall not be liable for any injuries, damages, or losses that may occur to any party or guest during the event. #TERM_CAP further agrees to bear all costs associated with such emergency services and Theta Xi Fraternity will not be held accountable for any claims, damages, or expenses arising out of or in connection with the use of such services.]
 
-#section("07", "Excessive Waste Policy")
+#section("06", "Excessive Waste Policy")
 In the event that excessive waste is not properly disposed of by #TERM, following the conclusion of its event, such negligence will be classified under "Damage to Property." Theta Xi Fraternity reserves the right to assess and impose necessary charges for the cleanup and disposal of this waste. For purposes of this Agreement, cleaning obligations are limited to the disposal of trash and garbage; #TERM is not responsible for mopping, sweeping, or any other deep cleaning of the premises.
 
-#section("08", "Restricted Areas")
+#section("07", "Restricted Areas")
 Guests of #TERM are permitted to access the following designated areas of the Fraternity House during the event: «ALLOWED_AREAS_LIST». Upstairs areas of the Fraternity House are strictly prohibited at all times. All other areas not listed above may only be entered when accompanied by a member of Theta Xi Fraternity. Any unauthorized access to restricted or prohibited areas will result in forfeiture of the \$#DEPOSIT security deposit.
 
-#section("09", "Termination of Agreement")
+#section("08", "Termination of Agreement")
 In the event of a breach of any of the terms and conditions outlined in this Agreement, Theta Xi Fraternity reserves the right to terminate this Agreement, remove #TERM from the premises, and retain the security deposit.
 
-#section("10", "Governing Law")
+#section("09", "Governing Law")
 This Agreement is governed by the laws of the State of California, and any disputes arising from this Agreement will be resolved under applicable state laws.
 
-#section("11", "Entire Agreement")
+#section("10", "Entire Agreement")
 This Agreement constitutes the entire understanding between Theta Xi Fraternity and #TERM concerning the event rental. Any modifications or amendments to this Agreement must be made in writing and signed by both parties.
 
 // ===================== SIGNATURES ====================================
