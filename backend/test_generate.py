@@ -295,6 +295,26 @@ def test_single_org_contract_text(client, auth_headers):
 
 
 @needs_typst
+@pytest.mark.parametrize("max_guests, expected_fee", [(50, False), (150, True)])
+def test_contract_deposit_and_cancellation_terms(client, auth_headers, max_guests, expected_fee):
+    r = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(max_guests=str(max_guests)),
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    text = _pdf_text(r.data)
+    assert "7 days before the event date" in text
+    assert "security deposit already paid by Pi Sigma Delta will be returned in full" in text
+    if expected_fee:
+        assert "$125 cancellation fee" in text
+        assert "full-refund terms of Subclause 3e apply instead" in text
+    else:
+        assert "no cancellation fee will be assessed" in text
+        assert "$125 cancellation fee" not in text
+
+
+@needs_typst
 def test_contract_parties_preamble_single_org(client, auth_headers):
     """The preamble names both parties up front — a contract that never
     identifies the counterparty isn't much of a contract."""
@@ -473,6 +493,7 @@ def test_deposit_invoice_two_pages_numbers_then_details(client, auth_headers):
     assert "Payment Instructions" not in pages[0]
     assert "Payment Instructions" in pages[1]
     assert "Security Deposit Terms" in pages[1]
+    assert "7 days before the event date" in pages[1]
 
 
 @needs_typst

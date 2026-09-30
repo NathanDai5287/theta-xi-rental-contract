@@ -1,7 +1,7 @@
 """
 Invoice generator. Handles two kinds:
 
-  - "deposit": security deposit invoice, due before the event starts.
+  - "deposit": security deposit invoice, due 7 days before the event.
                Mentions forfeiture conditions per the hosting contract.
   - "rental":  main rental fee invoice, due 2 days after the event.
 """
@@ -57,9 +57,9 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
             'This invoice represents the security deposit required to secure the rental '
             'of the Theta Xi Fraternity House. Payment of this deposit confirms #CLUB_NAME\'s '
             'agreement to the Hosting Contract executed for this event.\n\n'
-            '#subclause("2a.")[The security deposit must be received in full no later than 1 hour before '
-            'the event start time. The event will not be permitted to commence until '
-            'this invoice is paid.]\n\n'
+            '#subclause("2a.")[The security deposit must be received in full no later than '
+            '7 days before the event date. If the deposit is not received by that time, '
+            'Theta Xi Fraternity may cancel the event under the Hosting Contract.]\n\n'
             '#subclause("2b.")[Upon receipt of the full rental fee following the event, '
             'and provided no breach of the Hosting Contract has occurred, the security '
             'deposit will be returned to the Organization via a credit memo issued by Theta Xi '

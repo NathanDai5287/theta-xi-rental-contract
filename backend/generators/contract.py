@@ -289,6 +289,13 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     repl["«ALLOWED_AREAS_LIST»"] = english_list([AREA_LABELS[k] for k in areas])
 
     if max_guests_num > 50:
+        repl["«CANCELLATION_CLAUSE»"] = (
+            '#subclause("2b.")[If either party cancels this Agreement prior to the event, '
+            'a \\$125 cancellation fee, equal to the cost of the required fire permit, '
+            'will be assessed. Any security deposit already paid by #TERM will be returned '
+            'in full. If the fire permit is denied or cannot be obtained, the full-refund '
+            'terms of Subclause 3e apply instead.]'
+        )
         # Contingency price formula: ((price - 125) * (50 / max_guests)) * 0.75
         base_for_scale = max(0.0, price_val - 125.0)
         scale_factor = 50.0 / max_guests_num
@@ -325,6 +332,11 @@ def generate_contract(values: dict[str, Any]) -> bytes:
             'or if guests fail to comply with these noise and indoor-only restrictions.]'
         )
     else:
+        repl["«CANCELLATION_CLAUSE»"] = (
+            '#subclause("2b.")[If either party cancels this Agreement prior to the event, '
+            'no cancellation fee will be assessed. Any security deposit already paid '
+            'by #TERM will be returned in full.]'
+        )
         repl["«FIRE_PERMIT_CLAUSE»"] = ""
 
     # Subclause 4b — furniture restoration. Either Theta Xi clears items
