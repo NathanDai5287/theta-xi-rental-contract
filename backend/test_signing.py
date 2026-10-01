@@ -105,6 +105,11 @@ def test_one_envelope_all_people_and_exact_pdf(archive, monkeypatch, presign, co
     assert {p["email"] for p in request["recipients"]} == {p["email"] for p in contract["signers"]}
     assert all(len(p["fields"]) == 3 for p in request["recipients"])
     assert all(p["link"].startswith("https://sign.cal.taxi/sign/") for p in created["recipients"])
+    assert all(person["sentAt"] is None for person in created["recipients"])
+    marked = signing.mark_link_sent(conn, revision["id"], created["recipients"][0]["email"], True)
+    assert marked["recipients"][0]["sentAt"]
+    assert marked["recipients"][1]["sentAt"] is None
+    assert signing.mark_link_sent(conn, revision["id"], created["recipients"][0]["email"], True)["recipients"][0]["sentAt"] == marked["recipients"][0]["sentAt"]
     assert signing.create_links(conn, revision["id"], revision["original_sha256"])["id"] == revision["id"]
     assert len(fake.created) == 1
 
@@ -112,6 +117,7 @@ def test_one_envelope_all_people_and_exact_pdf(archive, monkeypatch, presign, co
     envelope["recipients"][0]["signingStatus"] = "SIGNED"
     partial = signing.sync(conn, revision["id"])
     assert partial["signedCount"] == 1 and partial["state"] == "awaiting_signatures"
+    assert partial["recipients"][0]["sentAt"] == marked["recipients"][0]["sentAt"]
     assert not partial["files"]["completed"]
     for person in envelope["recipients"]:
         person["signingStatus"] = "SIGNED"

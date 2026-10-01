@@ -311,6 +311,16 @@ def sync_signing(order_id: str, revision_id: str):
     return jsonify(revision=signing.sync(store.get_conn(), revision_id))
 
 
+@app.post("/api/orders/<order_id>/signing/<revision_id>/link-delivery")
+@_require_admin_key
+def mark_signing_link_delivery(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    body = _json_body()
+    return jsonify(revision=signing.mark_link_sent(store.get_conn(), revision_id, body.get("email"), body.get("sent")))
+
+
 @app.post("/api/orders/<order_id>/signing/<revision_id>/reconcile")
 @_require_admin_key
 def reconcile_signing(order_id: str, revision_id: str):

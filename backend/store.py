@@ -94,6 +94,13 @@ CREATE TABLE IF NOT EXISTS signing_revisions (
     UNIQUE(order_id, revision)
 );
 CREATE INDEX IF NOT EXISTS idx_signing_order ON signing_revisions(order_id, revision);
+
+CREATE TABLE IF NOT EXISTS signing_link_delivery (
+    revision_id TEXT NOT NULL REFERENCES signing_revisions(id) ON DELETE CASCADE,
+    recipient_email TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    PRIMARY KEY (revision_id, recipient_email)
+);
 """
 
 

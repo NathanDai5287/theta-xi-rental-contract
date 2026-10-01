@@ -59,10 +59,15 @@ def _save_file(revision_id: str, kind: str, content: bytes) -> None:
         temp.unlink(missing_ok=True)
 
 
-def _row(row: sqlite3.Row) -> dict[str, Any]:
+def _row(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     for key in ("payload", "signers", "fields", "recipients"):
         result[key] = json.loads(result[key])
+    sent = {item["recipient_email"]: item["sent_at"] for item in conn.execute(
+        "SELECT recipient_email, sent_at FROM signing_link_delivery WHERE revision_id = ?", (result["id"],)
+    ).fetchall()}
+    for person in result["recipients"]:
+        person["sentAt"] = sent.get(person["email"].casefold())
     result["signedCount"] = sum(p.get("status") == "SIGNED" for p in result["recipients"])
     result["totalCount"] = len(result["signers"])
     result["files"] = {key: _path(result["id"], key).exists() for key in ("original", "completed", "audit")}
@@ -71,13 +76,33 @@ def _row(row: sqlite3.Row) -> dict[str, Any]:
 
 def get(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM signing_revisions WHERE id = ?", (revision_id,)).fetchone()
-    return _row(row) if row else None
+    return _row(conn, row) if row else None
 
 
 def list_for_order(conn: sqlite3.Connection, order_id: str) -> list[dict[str, Any]]:
-    return [_row(row) for row in conn.execute(
+    return [_row(conn, row) for row in conn.execute(
         "SELECT * FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC", (order_id,)
     ).fetchall()]
+
+
+def mark_link_sent(conn: sqlite3.Connection, revision_id: str, email: str, sent: bool) -> dict[str, Any]:
+    """Record an administrator's explicit delivery acknowledgement only."""
+    revision = get(conn, revision_id)
+    if not revision:
+        raise SigningError("revision not found", 404)
+    if not isinstance(email, str) or not isinstance(sent, bool):
+        raise SigningError("recipient email and sent flag are required", 400)
+    normalized = email.strip().casefold()
+    if normalized not in {person["email"].casefold() for person in revision["recipients"]}:
+        raise SigningError("recipient not found on this signing request", 404)
+    if sent:
+        conn.execute("INSERT OR IGNORE INTO signing_link_delivery (revision_id, recipient_email, sent_at) VALUES (?, ?, ?)",
+                     (revision_id, normalized, store.now_iso()))
+    else:
+        conn.execute("DELETE FROM signing_link_delivery WHERE revision_id = ? AND recipient_email = ?",
+                     (revision_id, normalized))
+    conn.commit()
+    return get(conn, revision_id)  # type: ignore[return-value]
 
 
 def _documenso(method: str, path: str, *, body: dict | None = None,
@@ -142,13 +167,13 @@ def prepare(conn: sqlite3.Connection, order_id: str, payload: dict, request_key:
     if existing:
         if existing["order_id"] != order_id or existing["payload_hash"] != digest:
             raise SigningError("request key already belongs to a different contract")
-        return _row(existing)
+        return _row(conn, existing)
 
     latest = conn.execute("SELECT * FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC LIMIT 1", (order_id,)).fetchone()
     if not latest:
         _assert_order_terms(order, payload)
     if latest and latest["payload_hash"] == digest and latest["state"] not in ("cancelled", "failed"):
-        return _row(latest)
+        return _row(conn, latest)
     if latest and latest["state"] in ("creating", "creation_uncertain", "created", "preparing_completed_copy"):
         raise SigningError("prior revision is still processing; refresh its status before revising")
     # Validate and render the replacement before retiring live links. A bad
