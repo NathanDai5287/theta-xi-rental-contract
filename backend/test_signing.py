@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 
@@ -111,6 +112,46 @@ def _capture_prepare(attempt, count):
         return attempt(count)
     except signing.SigningError as exc:
         return exc
+
+
+def test_create_cannot_distribute_superseded_preview(archive, monkeypatch):
+    conn, order = archive
+    first = signing.prepare(conn, order["id"], payload(True), "create-race-first-key-123", "")
+    started, proceed = Event(), Event()
+    render = signing.generate_contract
+
+    def paused_render(contract):
+        started.set()
+        assert proceed.wait(10)
+        return render(contract)
+
+    monkeypatch.setattr(signing, "generate_contract", paused_render)
+    fake = FakeDocumenso()
+    monkeypatch.setattr(signing, "_documenso", fake)
+
+    def revise():
+        other = store._connect()
+        try:
+            return signing.prepare(other, order["id"], payload(True, 2), "create-race-next-key-123", first["id"])
+        finally:
+            other.close()
+
+    def create_old():
+        other = store._connect()
+        try:
+            return signing.create_links(other, first["id"], first["original_sha256"])
+        finally:
+            other.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        revision = pool.submit(revise)
+        assert started.wait(10)
+        old_request = pool.submit(create_old)
+        proceed.set()
+        assert revision.result()["revision"] == 2
+        with pytest.raises(signing.SigningError, match="superseded"):
+            old_request.result()
+    assert fake.created == []
 
 
 @pytest.mark.parametrize("presign,count", [(True, 1), (False, 3)])

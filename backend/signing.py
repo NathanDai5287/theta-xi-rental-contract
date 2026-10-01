@@ -248,6 +248,14 @@ def create_links(conn: sqlite3.Connection, revision_id: str, approved_sha256: st
     revision = get(conn, revision_id)
     if not revision:
         raise SigningError("revision not found", 404)
+    with _order_lock(revision["order_id"]):
+        return _create_links_locked(conn, revision_id, approved_sha256)
+
+
+def _create_links_locked(conn: sqlite3.Connection, revision_id: str, approved_sha256: str) -> dict[str, Any]:
+    revision = get(conn, revision_id)
+    if not revision:
+        raise SigningError("revision not found", 404)
     latest = conn.execute("SELECT id FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC LIMIT 1",
                           (revision["order_id"],)).fetchone()
     if not latest or latest["id"] != revision_id:
