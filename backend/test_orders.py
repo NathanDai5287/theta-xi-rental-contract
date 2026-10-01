@@ -34,6 +34,32 @@ def client(tmp_path, monkeypatch):
 
     app_module.app.config["TESTING"] = True
     with app_module.app.test_client() as c:
+        real_post = c.post
+        def scoped_post(path, **kwargs):
+            import copy
+            body = kwargs.get("json")
+            if isinstance(body, dict):
+                body = kwargs["json"] = copy.deepcopy(body)
+            if isinstance(body, dict):
+                docs = body.get("documents", []) if path == "/api/orders" else [body] if path.endswith("/documents") else []
+                fixtures = [doc for doc in docs if doc.get("_legacy_fixture")]
+                if fixtures:
+                    import uuid
+                    if path == "/api/orders":
+                        snapshot = body["snapshot"] = {**body["snapshot"], "documentContextId": "fixture-" + str(uuid.uuid4())}
+                    else:
+                        target = c.get(path.removesuffix("/documents"), headers=kwargs.get("headers")).get_json().get("order")
+                        snapshot = {**target["snapshot"], "documentContextId": target["snapshot"].get("documentContextId") or target["id"]} if target else {}
+                    for doc in fixtures:
+                        if doc["kind"] != "contract":
+                            doc["filename"] = doc["number"] + ".pdf"
+                        if path.endswith("/documents") and target:
+                            doc["expectedUpdatedAt"] = target["updatedAt"]
+                        doc.pop("_legacy_fixture")
+                        doc["sourceSnapshot"] = snapshot
+                        doc["generationReceipt"] = store_module.document_receipt(doc["kind"], doc["payload"], snapshot, doc["filename"])
+            return real_post(path, **kwargs)
+        c.post = scoped_post
         yield c
 
 
@@ -57,6 +83,7 @@ def _sample_order(**overrides):
 
 def _sample_document(**overrides):
     doc = {
+        "_legacy_fixture": True,
         "kind": "deposit_invoice",
         "number": "DEP-2026-0505-PISIGM",
         "filename": "DEP-2026-0505-PISIGM.pdf",
@@ -65,6 +92,8 @@ def _sample_document(**overrides):
         "payload": {"club_name": "Pi Sigma Delta", "amount": 500},
     }
     doc.update(overrides)
+    if "payload" not in overrides:
+        doc["payload"] = {"club_name": "Pi Sigma Delta", "date" if doc["kind"] == "contract" else "event_date": "May 5, 2026", "price" if doc["kind"] == "contract" else "amount": doc["amount"]}
     return doc
 
 
@@ -341,7 +370,7 @@ def test_add_document_appends_and_returns_order(client, auth_headers):
     assert doc["kind"] == "deposit_invoice"
     assert doc["number"] == "DEP-2026-0505-PISIGM"
     assert doc["amount"] == 500.0
-    assert doc["payload"] == {"club_name": "Pi Sigma Delta", "amount": 500}
+    assert doc["payload"] == {"club_name": "Pi Sigma Delta", "event_date": "May 5, 2026", "amount": 500}
     # adding a document bumps the order's updatedAt
     assert order["updatedAt"] >= created["updatedAt"]
 
@@ -448,6 +477,8 @@ def test_snapshot_and_payload_round_trip_verbatim(client, auth_headers):
         "unicode": "café \U0001F600",
     }
     payload = {
+        "club_name": "Pi Sigma Delta",
+        "event_date": "May 5, 2026",
         "line_items": [{"description": "Dépôt", "amount": "$1,234.56"}],
         "nested": {"deep": {"deeper": [1, 2, 3]}},
         "emoji": "\U0001F389",

@@ -167,14 +167,18 @@ def _documenso(method: str, path: str, *, body: dict | None = None,
 def _assert_order_terms(order: dict[str, Any], payload: dict[str, Any]) -> None:
     try:
         event_date = datetime.strptime(str(payload.get("date", "")), "%B %d, %Y").date().isoformat()
-        price = float(str(payload.get("price", "")).replace(",", ""))
-        deposit = float(str(payload.get("deposit", "")).replace(",", ""))
+        price = store._money(payload.get("price", ""))
+        deposit = store._money(payload.get("deposit", ""))
     except ValueError as exc:
         raise SigningError("contract terms do not match the saved order", 409) from exc
     if (event_date != order["eventDate"] or
             store.normalize_org_name(str(payload.get("club_name", ""))) != order["clubName"] or
             price != order["rentalPrice"] or deposit != order["depositAmount"]):
         raise SigningError("contract terms do not match the saved order", 409)
+    try:
+        store._validate_document_owner({"kind": "contract", "payload": payload, **({"sourceSnapshot": order["snapshot"]} if order["snapshot"].get("documentContextId") else {})}, order["snapshot"], order["clubName"], order["eventDate"])
+    except (ValueError, TypeError, KeyError) as exc:
+        raise SigningError("contract terms or recipients do not match the saved order", 409) from exc
 
 
 def prepare(conn: sqlite3.Connection, order_id: str, payload: dict, request_key: str, expected_latest_id: str | None = None) -> dict[str, Any]:

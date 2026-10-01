@@ -132,13 +132,26 @@ def _json_body() -> dict[str, Any]:
     return body
 
 
+def _generation_payload(kind):
+    body = _json_body()
+    source = body.get("_document_source")
+    payload = {key: value for key, value in body.items() if key != "_document_source"}
+    if source is not None:
+        store._require_json_object(source, "document source")
+        if not source.get("documentContextId"):
+            raise ValueError("document source requires an owner")
+        store._validate_document_owner({"kind": kind, "payload": payload, "sourceSnapshot": source}, source, store._clubs_display(source.get("clubs", [])), source.get("eventDate"))
+    return payload
+
 def _pdf_response(pdf_bytes: bytes, filename: str):
-    return send_file(
-        BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=filename,
-    )
+    response = send_file(BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=filename)
+    body = request.get_json(silent=True) or {}
+    source = body.get("_document_source")
+    if source is not None:
+        kinds = {"/api/generate/contract": "contract", "/api/generate/invoice/deposit": "deposit_invoice", "/api/generate/invoice/rental": "rental_invoice", "/api/generate/credit-memo": "credit_memo"}
+        payload = {key: value for key, value in body.items() if key != "_document_source"}
+        response.headers["X-Document-Receipt"] = store.document_receipt(kinds[request.path], payload, source, filename)
+    return response
 
 
 def _require_admin_key(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -173,14 +186,14 @@ def health():
 @app.post("/api/generate/contract")
 @_require_admin_key
 def contract():
-    payload = _json_body()
+    payload = _generation_payload("contract")
     pdf = generate_contract(payload)
     club = slug(str(payload.get("club_name", "partner")))
     return _pdf_response(pdf, f"theta_xi_{club}_contract.pdf")
 
 
 def _invoice_route(kind: str):
-    payload = _json_body()
+    payload = _generation_payload("deposit_invoice" if kind == "deposit" else "rental_invoice")
     payload["kind"] = kind
     pdf, number = generate_invoice(payload)
     return _pdf_response(pdf, f"{number}.pdf")
@@ -201,7 +214,7 @@ def invoice_rental():
 @app.post("/api/generate/credit-memo")
 @_require_admin_key
 def credit_memo():
-    payload = _json_body()
+    payload = _generation_payload("credit_memo")
     pdf, number = generate_credit_memo(payload)
     return _pdf_response(pdf, f"{number}.pdf")
 
@@ -280,6 +293,11 @@ def list_signing_revisions(order_id: str):
 @_require_admin_key
 def prepare_signing(order_id: str):
     body = _json_body()
+    order = store.get_order(store.get_conn(), order_id)
+    if not order:
+        return jsonify(error="not_found"), 404
+    if not isinstance(order["snapshot"].get("contractSigners"), list):
+        raise signing.SigningError("save this order's named representatives before preparing a signing revision", 409)
     revision = signing.prepare(store.get_conn(), order_id, body.get("payload"), body.get("requestKey"), body.get("expectedLatestRevisionId"))
     return jsonify(revision=revision)
 

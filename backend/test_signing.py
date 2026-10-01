@@ -350,7 +350,12 @@ def test_signed_contract_metadata_and_terms_are_guarded(archive, monkeypatch):
                     "generatedAt": "2026-10-01T00:00:00+00:00", "payload": payload(True)}
     with pytest.raises(ValueError, match="signing history"):
         store.add_document(conn, order["id"], contract_doc)
-    invoice_doc = {**contract_doc, "kind": "deposit_invoice", "number": "DEP-1"}
+    monkeypatch.setenv("ADMIN_KEY", "controlled-test-key")
+    source = {**order["snapshot"], "documentContextId": order["id"]}
+    invoice_doc = {**contract_doc, "kind": "deposit_invoice", "number": "DEP-1", "filename": "DEP-1.pdf",
+                   "expectedUpdatedAt": store.get_order(conn, order["id"])["updatedAt"], "sourceSnapshot": source}
+    invoice_doc["payload"] = {**invoice_doc["payload"], "event_date": "October 16, 2026"}
+    invoice_doc["generationReceipt"] = store.document_receipt(invoice_doc["kind"], invoice_doc["payload"], source, invoice_doc["filename"])
     assert store.add_document(conn, order["id"], invoice_doc)["documents"][0]["kind"] == "deposit_invoice"
 
 
