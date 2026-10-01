@@ -19,7 +19,12 @@ from __future__ import annotations
 
 import datetime
 import math
+import re
+from io import BytesIO
 from typing import Any, TypedDict
+
+from pypdf import PdfReader
+import fitz
 
 from .base import english_list, normalize_org_name, render_typst, typst_string
 
@@ -69,6 +74,7 @@ class ContractInput(TypedDict, total=False):
     sound_system: bool
     lighting_system: bool
     sign: bool
+    signers: list[dict[str, str]]
 
 
 def _hhmm(s: str) -> tuple[int, int]:
@@ -200,6 +206,109 @@ def _renter_sig_column(clubs: list[str], multi: bool) -> str:
     return "[\n" + "\n  #v(16pt)\n".join(blocks) + "\n]"
 
 
+def _signing_representatives(values: dict[str, Any], clubs: list[str], presigned: bool) -> list[dict[str, str]]:
+    raw = values.get("signers")
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 21:
+        raise ValueError("signers must contain between 1 and 21 representatives")
+    signers: list[dict[str, str]] = []
+    covered: set[str] = set()
+    emails: set[str] = set()
+    chapter_count = 0
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("each signer must be an object")
+        name = item.get("fullName")
+        email = item.get("email")
+        club = item.get("club")
+        role = item.get("role")
+        if not isinstance(name, str) or not 2 <= len(name.strip()) <= 120:
+            raise ValueError("each signer needs a full name of 2–120 characters")
+        if not isinstance(email, str) or len(email.strip()) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email.strip()):
+            raise ValueError("each signer needs a valid email address")
+        email = email.strip()
+        if email.casefold() in emails:
+            raise ValueError("signer email addresses must be unique")
+        emails.add(email.casefold())
+        if isinstance(club, str) and role == "club":
+            club = normalize_org_name(club)
+        if role == "club" and club in clubs:
+            covered.add(club)
+        elif role == "chapter" and club == "Theta Xi Fraternity":
+            chapter_count += 1
+        else:
+            raise ValueError("each signer must belong to a contracting party")
+        signers.append({"fullName": name.strip(), "email": email, "club": club, "role": role})
+    if covered != set(clubs):
+        raise ValueError("each club must have at least one representative")
+    if chapter_count != (0 if presigned else 1):
+        raise ValueError("chapter signer must match the presigning option")
+    return signers
+
+
+def _signing_pages(signers: list[dict[str, str]]) -> str:
+    pages: list[str] = []
+    for index, signer in enumerate(signers, 1):
+        # The visible boxes and Documenso fields occupy a fixed place on a
+        # dedicated US-letter page. Each page is checked after rendering.
+        pages.append(
+            "#pagebreak()\n"
+            '#letterhead("HOSTING CONTRACT", "Execution")\n'
+            "#v(34pt)\n"
+            f'#text(size: 8pt, weight: "bold", fill: brand)[EXECUTION PAGE {index} OF {len(signers)}]\n'
+            "#v(18pt)\n"
+            "By signing this page, the named representative agrees to the complete Hosting Contract preceding these execution pages.\n"
+            "#v(32pt)\n"
+            f'#text(size: 12pt, weight: "bold")[#"{typst_string(signer["fullName"])}"]\n'
+            "#v(5pt)\n"
+            f'#text(size: 10pt)[#"{typst_string(signer["club"])}"]\n'
+            "#v(45pt)\n"
+            '#rect(width: 100%, height: 62pt, stroke: 0.6pt + muted)\n'
+            "#v(5pt)\n"
+            '#text(size: 8pt, fill: muted)[SIGNATURE]\n'
+            "#v(22pt)\n"
+            "#grid(columns: (1fr, 1fr), column-gutter: 36pt,\n"
+            '  [#rect(width: 100%, height: 32pt, stroke: 0.6pt + muted) #text(size: 8pt, fill: muted)[NAME]],\n'
+            '  [#rect(width: 100%, height: 32pt, stroke: 0.6pt + muted) #text(size: 8pt, fill: muted)[DATE]],\n'
+            ")\n"
+        )
+    return "\n".join(pages)
+
+
+def signing_field_pages(pdf: bytes, signers: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Locate each generated execution box in the rendered PDF itself."""
+    pages = PdfReader(BytesIO(pdf)).pages
+    rendered = fitz.open(stream=pdf, filetype="pdf")
+    if len(pages) < len(signers):
+        raise ValueError("contract signature pages are missing")
+    first = len(pages) - len(signers)
+    result = []
+    for index, signer in enumerate(signers):
+        text = " ".join((pages[first + index].extract_text() or "").split())
+        name = " ".join(signer["fullName"].split())
+        if f"EXECUTION PAGE {index + 1} OF {len(signers)}" not in text or name not in text:
+            raise ValueError("contract signature page layout changed or overflowed")
+        page = first + index + 1
+        image_page = rendered[first + index]
+        boxes = [drawing["rect"] for drawing in image_page.get_drawings()]
+        signature = [r for r in boxes if abs(r.height - 62) < 1 and r.width > 400]
+        small = sorted((r for r in boxes if abs(r.height - 32) < 1 and 200 < r.width < 300), key=lambda r: r.x0)
+        if len(signature) != 1 or len(small) != 2 or abs(small[0].y0 - small[1].y0) > 1:
+            raise ValueError("contract signature boxes are missing or moved")
+        fields = []
+        for kind, rect in (("SIGNATURE", signature[0]), ("NAME", small[0]), ("DATE", small[1])):
+            # Keep inserted content just inside the visible strokes.
+            rect = rect + (2, 2, -2, -2)
+            fields.append({"identifier": 0, "type": kind, "page": page,
+                           "positionX": round(rect.x0 / image_page.rect.width * 100, 3),
+                           "positionY": round(rect.y0 / image_page.rect.height * 100, 3),
+                           "width": round(rect.width / image_page.rect.width * 100, 3),
+                           "height": round(rect.height / image_page.rect.height * 100, 3)})
+        result.append({"email": signer["email"], "page": page, "fields": fields})
+    return result
+
+
 def generate_contract(values: dict[str, Any]) -> bytes:
     # ── Required string fields (club identity resolved separately) ──
     base: dict[str, str] = {}
@@ -240,6 +349,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     sound_system    = bool(values.get("sound_system"))
     lighting_system = bool(values.get("lighting_system"))
     sign            = bool(values.get("sign"))
+    signers = _signing_representatives(values, clubs, sign)
 
     # ── Escaped string-literal bindings (the template references these
     #    with #TERM, #PRICE, … so user input stays inert text) ──
@@ -402,6 +512,8 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     # block is allowed to flow; each renter block is itself unbreakable,
     # so no party's lines ever split.
     repl["«SIG_BLOCK_BREAKABLE»"] = "true" if len(clubs) >= 5 else "false"
+    repl["«SIGNING_MODE»"] = "true" if signers else "false"
+    repl["«SIGNATURE_PAGES»"] = _signing_pages(signers)
 
     if sign:
         d = datetime.date.today()
@@ -411,4 +523,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         repl["«IS_SIGNED»"] = "false"
         repl["«SIG_DATE»"]  = ""
 
-    return render_typst("contract.typ", repl)
+    pdf = render_typst("contract.typ", repl)
+    if signers:
+        signing_field_pages(pdf, signers)
+    return pdf

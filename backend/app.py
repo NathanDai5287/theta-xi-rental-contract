@@ -42,6 +42,7 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 import store
+import signing
 from generators import generate_contract, generate_credit_memo, generate_invoice
 from generators.base import (
     TypstCompileError,
@@ -96,6 +97,11 @@ def _handle_unknown_placeholder(e: UnknownPlaceholderError):
 @app.errorhandler(ValueError)
 def _handle_value_error(e: ValueError):
     return jsonify(error="invalid_input", detail=str(e)), 400
+
+
+@app.errorhandler(signing.SigningError)
+def _handle_signing_error(e: signing.SigningError):
+    return jsonify(error="signing_error", detail=str(e)), e.status
 
 
 @app.errorhandler(413)
@@ -258,6 +264,96 @@ def add_order_document(order_id: str):
     if order is None:
         return jsonify(error="not_found"), 404
     return jsonify(order=order), 201
+
+
+@app.get("/api/orders/<order_id>/signing")
+@_require_admin_key
+def list_signing_revisions(order_id: str):
+    conn = store.get_conn()
+    if not store.get_order(conn, order_id):
+        return jsonify(error="not_found"), 404
+    return jsonify(revisions=signing.list_for_order(conn, order_id))
+
+
+@app.post("/api/orders/<order_id>/signing/prepare")
+@_require_admin_key
+def prepare_signing(order_id: str):
+    body = _json_body()
+    revision = signing.prepare(store.get_conn(), order_id, body.get("payload"), body.get("requestKey"))
+    return jsonify(revision=revision)
+
+
+@app.get("/api/orders/<order_id>/signing/<revision_id>")
+@_require_admin_key
+def get_signing_revision(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    return jsonify(revision=revision)
+
+
+@app.post("/api/orders/<order_id>/signing/<revision_id>/create-links")
+@_require_admin_key
+def create_signing_links(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    created = signing.create_links(store.get_conn(), revision_id, _json_body().get("approvedSha256"))
+    return jsonify(revision=created)
+
+
+@app.post("/api/orders/<order_id>/signing/<revision_id>/sync")
+@_require_admin_key
+def sync_signing(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    return jsonify(revision=signing.sync(store.get_conn(), revision_id))
+
+
+@app.post("/api/orders/<order_id>/signing/<revision_id>/reconcile")
+@_require_admin_key
+def reconcile_signing(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    return jsonify(revision=signing.reconcile(store.get_conn(), revision_id))
+
+
+@app.get("/api/orders/<order_id>/signing/<revision_id>/<kind>.pdf")
+@_require_admin_key
+def download_signing_file(order_id: str, revision_id: str, kind: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    if kind not in ("original", "completed", "audit"):
+        return jsonify(error="not_found"), 404
+    path = signing._path(revision_id, kind)
+    if not path.exists() or (kind != "original" and revision["state"] != "signed"):
+        return jsonify(error="not_ready"), 404
+    return send_file(path, mimetype="application/pdf", as_attachment=True,
+                     download_name=f"{revision_id}-{kind}.pdf")
+
+
+@app.post("/api/signing/notifications/<revision_id>")
+@_require_admin_key
+def signing_notification(revision_id: str):
+    body = _json_body()
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or not revision["envelope_id"] or body.get("envelopeId") != revision["envelope_id"]:
+        return jsonify(error="not_found"), 404
+    # The incoming event is only a hint. sync() fetches current state from
+    # Documenso, so duplicate and delayed events cannot regress progress.
+    signing.sync(store.get_conn(), revision_id)
+    return jsonify(ok=True)
+
+
+@app.post("/api/signing/completed-copy")
+@_require_admin_key
+def completed_signing_copy():
+    path = signing.completed_copy_for_token(store.get_conn(), _json_body().get("token"))
+    return send_file(path, mimetype="application/pdf", as_attachment=True,
+                     download_name="completed-hosting-contract.pdf")
 
 
 if __name__ == "__main__":

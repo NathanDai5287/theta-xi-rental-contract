@@ -1,0 +1,435 @@
+"""Immutable hosting contract revisions and Documenso v2.19 envelopes.
+
+All writes run behind the backend admin key. PDF files are stored separately
+from the regenerable order-document metadata; deleting an order with signing
+history is blocked by the foreign key. Never log recipient links or tokens.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import secrets
+import hmac
+from datetime import datetime, timezone
+from urllib.parse import urlparse
+from pathlib import Path
+import sqlite3
+from typing import Any
+
+import requests
+
+import store
+from generators.contract import _resolve_clubs, _signing_representatives, generate_contract, signing_field_pages
+
+
+class SigningError(Exception):
+    def __init__(self, message: str, status: int = 409):
+        super().__init__(message)
+        self.status = status
+
+
+def _root() -> Path:
+    root = Path(os.environ.get("SIGNING_STORAGE_DIR") or store.BACKEND_ROOT / "contract-files").resolve()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(root, 0o700)
+    return root
+
+
+def _path(revision_id: str, kind: str) -> Path:
+    if kind not in ("original", "completed", "audit") or not re.fullmatch(r"sig_[0-9a-f]{16}", revision_id):
+        raise SigningError("invalid file request", 400)
+    return _root() / revision_id / f"{kind}.pdf"
+
+
+def _save_file(revision_id: str, kind: str, content: bytes) -> None:
+    if not content.startswith(b"%PDF-"):
+        raise SigningError("signing provider did not return a PDF", 502)
+    target = _path(revision_id, kind)
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(target.parent, 0o700)
+    temp = target.with_name(f".{kind}.{secrets.token_hex(12)}.tmp")
+    try:
+        with os.fdopen(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as file:
+            file.write(content)
+        os.replace(temp, target)
+        os.chmod(target, 0o600)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    for key in ("payload", "signers", "fields", "recipients"):
+        result[key] = json.loads(result[key])
+    result["signedCount"] = sum(p.get("status") == "SIGNED" for p in result["recipients"])
+    result["totalCount"] = len(result["signers"])
+    result["files"] = {key: _path(result["id"], key).exists() for key in ("original", "completed", "audit")}
+    return result
+
+
+def get(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any] | None:
+    row = conn.execute("SELECT * FROM signing_revisions WHERE id = ?", (revision_id,)).fetchone()
+    return _row(row) if row else None
+
+
+def list_for_order(conn: sqlite3.Connection, order_id: str) -> list[dict[str, Any]]:
+    return [_row(row) for row in conn.execute(
+        "SELECT * FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC", (order_id,)
+    ).fetchall()]
+
+
+def _documenso(method: str, path: str, *, body: dict | None = None,
+               pdf: bytes | None = None) -> Any:
+    origin = os.environ.get("DOCUMENSO_ORIGIN", "").rstrip("/")
+    token = os.environ.get("DOCUMENSO_API_KEY", "")
+    parsed = urlparse(origin)
+    local_http = parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    if not (parsed.scheme == "https" or local_http) or not token:
+        raise SigningError("Documenso is not configured", 503)
+    headers = {"Authorization": token}
+    kwargs: dict[str, Any] = {"headers": headers, "timeout": 45}
+    if pdf is not None:
+        kwargs["data"] = {"payload": json.dumps(body)}
+        kwargs["files"] = [("files", ("hosting-contract.pdf", pdf, "application/pdf"))]
+    elif body is not None:
+        kwargs["json"] = body
+    try:
+        response = requests.request(method, f"{origin}/api/v2{path}", **kwargs)
+    except requests.RequestException as exc:
+        # A timeout after POST/create has unknown outcome. The caller persists
+        # its 'creating' state and never automatically retries that POST.
+        raise SigningError("Documenso is unavailable; inspect the request before retrying", 503) from exc
+    if not response.ok:
+        raise SigningError(f"Documenso returned {response.status_code}; review the request", 502)
+    if "download" in path:
+        return response.content
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise SigningError("Documenso returned an invalid response", 502) from exc
+
+
+def _assert_order_terms(order: dict[str, Any], payload: dict[str, Any]) -> None:
+    try:
+        event_date = datetime.strptime(str(payload.get("date", "")), "%B %d, %Y").date().isoformat()
+        price = float(str(payload.get("price", "")).replace(",", ""))
+        deposit = float(str(payload.get("deposit", "")).replace(",", ""))
+    except ValueError as exc:
+        raise SigningError("contract terms do not match the saved order", 409) from exc
+    if (event_date != order["eventDate"] or
+            store.normalize_org_name(str(payload.get("club_name", ""))) != order["clubName"] or
+            price != order["rentalPrice"] or deposit != order["depositAmount"]):
+        raise SigningError("contract terms do not match the saved order", 409)
+
+
+def prepare(conn: sqlite3.Connection, order_id: str, payload: dict, request_key: str) -> dict[str, Any]:
+    order = store.get_order(conn, order_id)
+    if not order:
+        raise SigningError("order not found", 404)
+    if not isinstance(request_key, str) or not 12 <= len(request_key) <= 100:
+        raise SigningError("a stable request key is required", 400)
+    if not isinstance(payload, dict):
+        raise SigningError("contract payload is required", 400)
+    clubs = _resolve_clubs(payload)
+    signers = _signing_representatives(payload, clubs, payload.get("sign") is True)
+    if not signers:
+        raise SigningError("at least one signer is required", 400)
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    digest = hashlib.sha256(canonical.encode()).hexdigest()
+    existing = conn.execute("SELECT * FROM signing_revisions WHERE request_key = ?", (request_key,)).fetchone()
+    if existing:
+        if existing["order_id"] != order_id or existing["payload_hash"] != digest:
+            raise SigningError("request key already belongs to a different contract")
+        return _row(existing)
+
+    latest = conn.execute("SELECT * FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC LIMIT 1", (order_id,)).fetchone()
+    if not latest:
+        _assert_order_terms(order, payload)
+    if latest and latest["payload_hash"] == digest and latest["state"] not in ("cancelled", "failed"):
+        return _row(latest)
+    if latest and latest["state"] in ("creating", "creation_uncertain", "created", "preparing_completed_copy"):
+        raise SigningError("prior revision is still processing; refresh its status before revising")
+    # Validate and render the replacement before retiring live links. A bad
+    # name or Typst failure must not cancel a usable prior contract.
+    pdf = generate_contract(payload)
+    fields = signing_field_pages(pdf, signers)
+    if latest and latest["state"] == "awaiting_signatures":
+        if not latest["envelope_id"]:
+            raise SigningError("prior request outcome is unknown; reconcile it in Documenso first")
+        # Cancel preserves the previous envelope and invalidates pending links.
+        envelope = _documenso("GET", f"/envelope/{latest['envelope_id']}")
+        if envelope.get("status") == "PENDING":
+            _documenso("POST", "/envelope/cancel", body={"envelopeId": latest["envelope_id"], "reason": "Contract revised"})
+            conn.execute("UPDATE signing_revisions SET state = 'cancelled', updated_at = ? WHERE id = ?",
+                         (store.now_iso(), latest["id"]))
+            conn.commit()
+        elif envelope.get("status") != "COMPLETED":
+            raise SigningError("previous request cannot be safely cancelled; refresh its status")
+        else:
+            completed = sync(conn, latest["id"])
+            if completed["state"] != "signed":
+                raise SigningError("store the completed previous contract before preparing another revision")
+
+    revision_id = store.new_id("sig")
+    revision_number = (latest["revision"] if latest else 0) + 1
+    _save_file(revision_id, "original", pdf)
+    stamp = store.now_iso()
+    conn.execute("""INSERT INTO signing_revisions
+        (id, order_id, revision, request_key, payload_hash, payload, signers, fields,
+         state, original_sha256, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'preview', ?, ?, ?)""",
+        (revision_id, order_id, revision_number, request_key, digest, canonical,
+         json.dumps(signers), json.dumps(fields), hashlib.sha256(pdf).hexdigest(), stamp, stamp))
+    conn.commit()
+    return get(conn, revision_id)  # type: ignore[return-value]
+
+
+def create_links(conn: sqlite3.Connection, revision_id: str, approved_sha256: str) -> dict[str, Any]:
+    revision = get(conn, revision_id)
+    if not revision:
+        raise SigningError("revision not found", 404)
+    latest = conn.execute("SELECT id FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC LIMIT 1",
+                          (revision["order_id"],)).fetchone()
+    if not latest or latest["id"] != revision_id:
+        raise SigningError("this contract revision has been superseded")
+    order = store.get_order(conn, revision["order_id"])
+    if not order:
+        raise SigningError("order not found", 404)
+    _assert_order_terms(order, revision["payload"])
+    if revision["original_sha256"] != approved_sha256:
+        raise SigningError("preview has changed; review the current PDF before signing")
+    if revision["state"] == "awaiting_signatures" or revision["state"] == "signed":
+        return revision
+    if revision["state"] not in ("preview", "created"):
+        raise SigningError("request is processing or needs reconciliation; no duplicate will be created")
+
+    if revision["state"] == "preview":
+        # Atomic claim prevents concurrent clicks from issuing two envelopes.
+        claimed = conn.execute("UPDATE signing_revisions SET state = 'creating', updated_at = ? WHERE id = ? AND state = 'preview'",
+                               (store.now_iso(), revision_id))
+        conn.commit()
+        if claimed.rowcount != 1:
+            raise SigningError("request is already processing")
+        recipients = []
+        fields_by_email = {item["email"].casefold(): item["fields"] for item in revision["fields"]}
+        for signer in revision["signers"]:
+            recipients.append({"email": signer["email"], "name": signer["fullName"], "role": "SIGNER",
+                               "accessAuth": [], "actionAuth": [], "fields": fields_by_email[signer["email"].casefold()]})
+        payload = {"type": "DOCUMENT", "title": f"Hosting Contract {revision['order_id']} · revision {revision['revision']}",
+                   "externalId": revision_id, "recipients": recipients,
+                   "globalAccessAuth": [], "globalActionAuth": [],
+                   "meta": {"distributionMethod": "NONE", "signingOrder": "PARALLEL",
+                            "typedSignatureEnabled": True, "drawSignatureEnabled": True,
+                            "uploadSignatureEnabled": False}}
+        try:
+            response = _documenso("POST", "/envelope/create", body=payload, pdf=_path(revision_id, "original").read_bytes())
+        except SigningError as exc:
+            conn.execute("UPDATE signing_revisions SET state = 'creation_uncertain', error = ?, updated_at = ? WHERE id = ?",
+                         (str(exc), store.now_iso(), revision_id))
+            conn.commit()
+            raise
+        envelope_id = response.get("id")
+        if not isinstance(envelope_id, str):
+            raise SigningError("Documenso returned no envelope ID; reconcile this request", 502)
+        conn.execute("UPDATE signing_revisions SET envelope_id = ?, state = 'created', updated_at = ? WHERE id = ?",
+                     (envelope_id, store.now_iso(), revision_id))
+        conn.commit()
+        revision = get(conn, revision_id)
+
+    # If distribute was interrupted, check the actual state before retrying.
+    assert revision and revision["envelope_id"]
+    envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
+    _verify_provider_envelope(revision, envelope)
+    _verify_provider_original(revision, envelope)
+    if envelope.get("status") == "PENDING":
+        people = envelope.get("recipients", [])
+        links = [{"id": p["id"], "email": p["email"], "name": p["name"],
+                  "status": p["signingStatus"], "link": _link_from_token(p["token"])} for p in people]
+    elif envelope.get("status") == "DRAFT":
+        _documenso("POST", "/envelope/distribute", body={"envelopeId": revision["envelope_id"],
+                    "meta": {"distributionMethod": "NONE"}})
+        envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
+        _verify_provider_envelope(revision, envelope)
+        _verify_provider_original(revision, envelope)
+        if envelope.get("status") != "PENDING":
+            raise SigningError("Documenso did not activate the signing request", 502)
+        links = [{"id": p["id"], "email": p["email"], "name": p["name"],
+                  "status": p["signingStatus"], "link": _link_from_token(p["token"])} for p in envelope["recipients"]]
+    else:
+        raise SigningError("envelope state needs reconciliation before links can be shown")
+    expected = {s["email"].casefold() for s in revision["signers"]}
+    if {p["email"].casefold() for p in links} != expected:
+        raise SigningError("Documenso recipients differ from the approved contract")
+    expected_origin = os.environ["DOCUMENSO_ORIGIN"].rstrip("/") + "/sign/"
+    if any(not p["link"].startswith(expected_origin) for p in links):
+        raise SigningError("Documenso signing URLs use the wrong host", 502)
+    existing_tokens = {p["email"].casefold(): p.get("copyToken") for p in revision["recipients"]}
+    for person in links:
+        person["copyToken"] = existing_tokens.get(person["email"].casefold()) or secrets.token_urlsafe(32)
+    conn.execute("UPDATE signing_revisions SET recipients = ?, item_id = ?, state = 'awaiting_signatures', updated_at = ? WHERE id = ?",
+                 (json.dumps(links), envelope["envelopeItems"][0]["id"], store.now_iso(), revision_id))
+    conn.commit()
+    return get(conn, revision_id)  # type: ignore[return-value]
+
+
+def _verify_provider_envelope(revision: dict[str, Any], envelope: dict[str, Any]) -> None:
+    """Fail closed before distribution if Documenso changed recipients or fields."""
+    if envelope.get("id") != revision["envelope_id"] or envelope.get("externalId") != revision["id"]:
+        raise SigningError("Documenso envelope identity mismatch", 502)
+    meta = envelope.get("documentMeta") or {}
+    if meta.get("distributionMethod") != "NONE" or meta.get("signingOrder") != "PARALLEL":
+        raise SigningError("Documenso signing or email settings differ from the approved request", 502)
+    if not meta.get("typedSignatureEnabled") or not meta.get("drawSignatureEnabled"):
+        raise SigningError("Documenso signature methods differ from the approved request", 502)
+    items = envelope.get("envelopeItems") or []
+    if len(items) != 1:
+        raise SigningError("Documenso must contain exactly one contract PDF", 502)
+    recipients = envelope.get("recipients") or []
+    if len(recipients) != len(revision["signers"]):
+        raise SigningError("Documenso recipient count differs from the approved contract", 502)
+    by_email = {person.get("email", "").casefold(): person for person in recipients}
+    if len(by_email) != len(recipients):
+        raise SigningError("Documenso recipient addresses are not unique", 502)
+    expected_signers = {person["email"].casefold(): person for person in revision["signers"]}
+    if set(by_email) != set(expected_signers):
+        raise SigningError("Documenso recipients differ from the approved contract", 502)
+    for email, person in by_email.items():
+        if person.get("name") != expected_signers[email]["fullName"] or person.get("role") != "SIGNER":
+            raise SigningError("Documenso recipient identity differs from the approved contract", 502)
+    actual_fields = envelope.get("fields") or []
+    expected_fields = {entry["email"].casefold(): entry["fields"] for entry in revision["fields"]}
+    if len(actual_fields) != sum(len(fields) for fields in expected_fields.values()):
+        raise SigningError("Documenso field count differs from the approved contract", 502)
+    for email, fields in expected_fields.items():
+        person_id = by_email[email]["id"]
+        owned = [field for field in actual_fields if field.get("recipientId") == person_id]
+        if len(owned) != len(fields):
+            raise SigningError("Documenso field ownership differs from the approved contract", 502)
+        for expected in fields:
+            matches = [field for field in owned if field.get("type") == expected["type"]]
+            if len(matches) != 1:
+                raise SigningError("Documenso signer fields differ from the approved contract", 502)
+            actual = matches[0]
+            if actual.get("page") != expected["page"] or actual.get("envelopeItemId") != items[0]["id"]:
+                raise SigningError("Documenso signer field page differs from the approved contract", 502)
+            try:
+                coordinates_match = all(abs(float(actual[key]) - expected[key]) <= 0.02 for key in
+                                        ("positionX", "positionY", "width", "height"))
+            except (KeyError, TypeError, ValueError):
+                coordinates_match = False
+            if not coordinates_match:
+                raise SigningError("Documenso signer field position differs from the approved contract", 502)
+
+
+def _verify_provider_original(revision: dict[str, Any], envelope: dict[str, Any]) -> None:
+    item_id = envelope["envelopeItems"][0]["id"]
+    provider_original = _documenso("GET", f"/envelope/item/{item_id}/download?version=original")
+    if hashlib.sha256(provider_original).hexdigest() != revision["original_sha256"]:
+        raise SigningError("Documenso stored a different PDF than the approved preview", 502)
+
+
+def reconcile(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
+    """Recover a lost create response without issuing a second POST/create."""
+    revision = get(conn, revision_id)
+    if not revision:
+        raise SigningError("revision not found", 404)
+    if revision["state"] == "created":
+        return create_links(conn, revision_id, revision["original_sha256"])
+    if revision["state"] not in ("creating", "creation_uncertain"):
+        return revision
+    matches = []
+    page = 1
+    while True:
+        found = _documenso("GET", f"/envelope?type=DOCUMENT&page={page}&perPage=100")
+        matches += [item for item in found["data"] if item.get("externalId") == revision_id]
+        if page >= found["totalPages"]:
+            break
+        page += 1
+    if len(matches) > 1:
+        raise SigningError("multiple provider envelopes match this revision; manual repair required", 502)
+    if not matches:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(revision["updated_at"])
+        if age.total_seconds() < 15 * 60:
+            raise SigningError("provider request outcome is still uncertain; check again after 15 minutes")
+        # A full provider listing after the grace period found no request.
+        # Retain the failed revision; a new prepare gets a new revision ID.
+        conn.execute("UPDATE signing_revisions SET state = 'failed', error = ?, updated_at = ? WHERE id = ?",
+                     ("No matching provider request found after 15 minutes", store.now_iso(), revision_id))
+        conn.commit()
+        return get(conn, revision_id)  # type: ignore[return-value]
+    envelope_id = matches[0]["id"]
+    conn.execute("UPDATE signing_revisions SET envelope_id = ?, state = 'created', error = NULL, updated_at = ? WHERE id = ?",
+                 (envelope_id, store.now_iso(), revision_id))
+    conn.commit()
+    return create_links(conn, revision_id, revision["original_sha256"])
+
+
+def _link_from_token(token: str) -> str:
+    origin = os.environ["DOCUMENSO_ORIGIN"].rstrip("/")
+    return f"{origin}/sign/{token}"
+
+
+def completed_copy_for_token(conn: sqlite3.Connection, token: str) -> Path:
+    if not isinstance(token, str) or len(token) > 100:
+        raise SigningError("invalid link", 404)
+    # Tokens are kept with their matching recipients so an administrator can
+    # retrieve the same link after a reload. A random 256-bit token makes an
+    # online guess impractical; scan is small for this archive's order volume.
+    rows = conn.execute("SELECT id, recipients, state FROM signing_revisions WHERE state IN ('awaiting_signatures', 'preparing_completed_copy', 'signed')").fetchall()
+    for row in rows:
+        for person in json.loads(row["recipients"]):
+            candidate = person.get("copyToken", "")
+            if candidate and hmac.compare_digest(candidate, token):
+                if row["state"] != "signed":
+                    raise SigningError("completed contract is not ready yet", 409)
+                path = _path(row["id"], "completed")
+                if path.exists():
+                    return path
+    raise SigningError("invalid link", 404)
+
+
+def sync(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
+    revision = get(conn, revision_id)
+    if not revision:
+        raise SigningError("revision not found", 404)
+    if not revision["envelope_id"] or revision["state"] in ("preview", "creating", "created", "cancelled", "signed"):
+        return revision
+    envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
+    _verify_provider_envelope(revision, envelope)
+    _verify_provider_original(revision, envelope)
+    by_email = {p["email"].casefold(): p for p in envelope["recipients"]}
+    expected = {p["email"].casefold() for p in revision["signers"]}
+    if set(by_email) != expected:
+        raise SigningError("Documenso recipient list changed", 502)
+    people = [{**old, "status": by_email[old["email"].casefold()]["signingStatus"]}
+              for old in revision["recipients"]]
+    status = envelope["status"]
+    if status == "CANCELLED":
+        state = "cancelled"
+    elif status == "REJECTED":
+        state = "failed"
+    elif status == "COMPLETED" and all(p["status"] == "SIGNED" for p in people):
+        state = "preparing_completed_copy"
+    else:
+        state = "awaiting_signatures"
+    updated = conn.execute("UPDATE signing_revisions SET recipients = ?, state = ?, updated_at = ? WHERE id = ? AND state = ?",
+                           (json.dumps(people), state, store.now_iso(), revision_id, revision["state"]))
+    conn.commit()
+    if updated.rowcount != 1:
+        return get(conn, revision_id)  # type: ignore[return-value]
+    if state == "preparing_completed_copy":
+        item_id = revision["item_id"] or envelope["envelopeItems"][0]["id"]
+        try:
+            _save_file(revision_id, "completed", _documenso("GET", f"/envelope/item/{item_id}/download?version=signed"))
+            _save_file(revision_id, "audit", _documenso("GET", f"/envelope/{revision['envelope_id']}/audit-log/download"))
+        except SigningError as exc:
+            conn.execute("UPDATE signing_revisions SET error = ?, updated_at = ? WHERE id = ?",
+                         (str(exc), store.now_iso(), revision_id))
+            conn.commit()
+            return get(conn, revision_id)  # type: ignore[return-value]
+        conn.execute("UPDATE signing_revisions SET state = 'signed', error = NULL, updated_at = ? WHERE id = ? AND state = 'preparing_completed_copy'",
+                     (store.now_iso(), revision_id))
+        conn.commit()
+    return get(conn, revision_id)  # type: ignore[return-value]

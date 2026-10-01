@@ -15,7 +15,9 @@ requests on different threads.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
+import os
 import re
 import secrets
 import sqlite3
@@ -61,17 +63,50 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_order_id ON documents(order_id);
 
+CREATE TABLE IF NOT EXISTS order_create_keys (
+    request_key TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+    request_hash TEXT NOT NULL
+);
+
 -- A rental has at most one of each document. Regenerating a PDF supersedes
 -- the previous one rather than adding a second: two deposit invoices on an
 -- order would double-count in the archive's ledger and misreport the balance.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_order_kind ON documents(order_id, kind);
+
+CREATE TABLE IF NOT EXISTS signing_revisions (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+    revision INTEGER NOT NULL,
+    request_key TEXT NOT NULL UNIQUE,
+    payload_hash TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    signers TEXT NOT NULL,
+    fields TEXT NOT NULL,
+    state TEXT NOT NULL,
+    original_sha256 TEXT NOT NULL,
+    envelope_id TEXT UNIQUE,
+    recipients TEXT NOT NULL DEFAULT '[]',
+    item_id TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(order_id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_signing_order ON signing_revisions(order_id, revision);
 """
 
 
 def _db_path() -> str:
-    import os
-
     return os.environ.get("ORDERS_DB_PATH") or str(DEFAULT_DB_PATH)
+
+
+def _protect_db_files(path: str) -> None:
+    """The archive now holds private signer links as well as order details."""
+    for suffix in ("", "-wal", "-shm"):
+        candidate = Path(path + suffix)
+        if candidate.exists():
+            os.chmod(candidate, 0o600)
 
 
 def _connect() -> sqlite3.Connection:
@@ -85,6 +120,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    _protect_db_files(path)
     return conn
 
 
@@ -95,15 +131,16 @@ def init_db(path: str | None = None) -> None:
     the database file itself, so it only needs to be requested once here
     rather than per-connection.
     """
-    import os
-
     target = path or os.environ.get("ORDERS_DB_PATH") or str(DEFAULT_DB_PATH)
     Path(target).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(target)
     try:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(_SCHEMA)
+        if "request_hash" not in {row[1] for row in conn.execute("PRAGMA table_info(order_create_keys)")}:
+            conn.execute("ALTER TABLE order_create_keys ADD COLUMN request_hash TEXT")
         conn.commit()
+        _protect_db_files(target)
     finally:
         conn.close()
 
@@ -325,6 +362,26 @@ def create_order(conn: sqlite3.Connection, body: Any) -> dict[str, Any]:
     """Validate + insert a new order (and any inline documents). Returns the Order dict."""
     if not isinstance(body, dict):
         raise ValueError("body must be a JSON object")
+    request_key = body.get("requestKey")
+    if request_key is not None:
+        if not isinstance(request_key, str) or not 12 <= len(request_key) <= 100:
+            raise ValueError("requestKey must be 12–100 characters")
+        # The UI snapshot also contains workspace bookkeeping which changes
+        # after the first save without changing the order being requested.
+        keyed_body = {key: value for key, value in body.items() if key != "requestKey"}
+        if isinstance(keyed_body.get("snapshot"), dict):
+            keyed_body["snapshot"] = {key: value for key, value in keyed_body["snapshot"].items()
+                                      if key not in ("currentOrderId", "orderCreateRequestKey", "loadedOrderIdentity")}
+        request_hash = hashlib.sha256(json.dumps(keyed_body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        # Serialize creation for this SQLite database. If the HTTP response
+        # gets lost, a retry with the same key returns the already-saved order.
+        conn.execute("BEGIN IMMEDIATE")
+        prior = conn.execute("SELECT order_id, request_hash FROM order_create_keys WHERE request_key = ?", (request_key,)).fetchone()
+        if prior:
+            conn.commit()
+            if prior["request_hash"] != request_hash:
+                raise ValueError("requestKey belongs to different order details; reconcile the original save")
+            return get_order(conn, prior["order_id"])  # type: ignore[return-value]
 
     club_name = body.get("clubName")
     if not isinstance(club_name, str) or not club_name.strip():
@@ -380,6 +437,10 @@ def create_order(conn: sqlite3.Connection, body: Any) -> dict[str, Any]:
             ),
         )
 
+    if request_key is not None:
+        conn.execute("INSERT INTO order_create_keys (request_key, order_id, request_hash) VALUES (?, ?, ?)",
+                     (request_key, order_id, request_hash))
+
     conn.commit()
     return get_order(conn, order_id)  # type: ignore[return-value]
 
@@ -408,8 +469,26 @@ def update_order(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str
     """
     if not isinstance(body, dict):
         raise ValueError("body must be a JSON object")
-    if _fetch_order_row(conn, order_id) is None:
+    current = _fetch_order_row(conn, order_id)
+    if current is None:
         return None
+
+    latest = conn.execute("SELECT state FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC LIMIT 1", (order_id,)).fetchone()
+    if latest and latest["state"] in ("awaiting_signatures", "preparing_completed_copy", "signed"):
+        columns = {"clubName": "club_name", "eventDate": "event_date",
+                   "rentalPrice": "rental_price", "depositAmount": "deposit_amount"}
+        changed = any(key in body and body[key] != current[column] for key, column in columns.items())
+        if "snapshot" in body and isinstance(body["snapshot"], dict):
+            old = json.loads(current["snapshot"])
+            new = body["snapshot"]
+            contract_keys = ("clubs", "eventDate", "numGuests", "startTime", "endTime", "depositAmount",
+                             "maxGuests", "monitors", "areas", "cleared", "guestList", "soundSystem",
+                             "lightingSystem", "pricingSelections", "finalPrice", "overrides",
+                             "pricingBreakdown", "rentalPrice", "contractSigners", "chapterSignerName",
+                             "chapterSignerEmail", "contractPresign")
+            changed = changed or any(old.get(key) != new.get(key) for key in contract_keys)
+        if changed:
+            raise ValueError("prepare a new contract revision before changing signed or pending terms")
 
     set_clauses: list[str] = []
     params: list[Any] = []
@@ -436,6 +515,8 @@ def delete_order(conn: sqlite3.Connection, order_id: str) -> bool:
     """Delete an order (and its documents, via ON DELETE CASCADE). Returns whether it existed."""
     if _fetch_order_row(conn, order_id) is None:
         return False
+    if conn.execute("SELECT 1 FROM signing_revisions WHERE order_id = ? LIMIT 1", (order_id,)).fetchone():
+        raise ValueError("orders with signing history cannot be deleted")
     conn.execute("DELETE FROM orders WHERE id = ?", (order_id,))
     conn.commit()
     return True
@@ -453,6 +534,11 @@ def add_document(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str
     if _fetch_order_row(conn, order_id) is None:
         return None
     doc = _validate_document_input(body)
+    if doc["kind"] == "contract" and conn.execute(
+        "SELECT 1 FROM signing_revisions WHERE order_id = ? AND state IN ('awaiting_signatures', 'preparing_completed_copy', 'signed') LIMIT 1",
+        (order_id,),
+    ).fetchone():
+        raise ValueError("contract documents with signing history cannot be replaced; prepare a new revision")
 
     conn.execute(
         "DELETE FROM documents WHERE order_id = ? AND kind = ?",

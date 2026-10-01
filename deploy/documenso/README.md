@@ -1,0 +1,27 @@
+# Documenso Community Edition deployment (prepared, not applied)
+
+The configuration pins Documenso v2.19.0 and PostgreSQL 16.10 by image digest. It binds only to `127.0.0.1:3005` on Minmus. The existing PDF service at `127.0.0.1:5000` is separate and must stay running. This directory contains no credentials or generated certificates.
+
+## Before enabling
+
+1. Ensure Minmus has room for the container images and database. On 2026-09-30 it had 17 GiB free; Documenso recommends 20 GiB of production storage. Expand/clean storage and configure monitoring before accepting contracts.
+2. Add `sign.cal.taxi` to the existing Cloudflare tunnel DNS/ingress with `service: http://localhost:3005`, before the final catch-all. This requires privileged access to `/etc/cloudflared/config.yml`; the current development SSH account cannot read or edit it. Keep Cloudflare HTTPS enabled. The tunnel must forward the webhook endpoint on `admin.cal.taxi` separately through Vercel.
+3. Copy `.env.example` to `.env`, set mode `0600`, and supply unique secrets. URL-encode special characters in the Postgres password in `NEXT_PRIVATE_DATABASE_URL`. Use an SMTP account under your control; no paid Documenso API or subscription is required. Initial signing invitations and completed-copy emails are disabled by `distributionMethod: NONE`; SMTP is still needed for owner account setup and other Documenso account mail.
+4. Generate a `.p12` certificate with a private key and password as in the [official local certificate guide](https://docs.documenso.com/docs/self-hosting/configuration/signing-certificate/local). Place it at `secrets/cert.p12`, readable by container UID 1001, and back it up securely. A self-signed certificate gives cryptographic signatures but common PDF readers may show an untrusted certificate warning. It is not an Adobe trusted identity.
+5. Start with `docker compose --env-file .env up -d`. Create the owner account using controlled addresses while temporarily setting `NEXT_PUBLIC_DISABLE_SIGNUP=false`; then restore `true`. Create an API token and a webhook for `https://admin.cal.taxi/api/host/signing/webhook` with a strong secret and signing events. Configure the Next app's server-only `DOCUMENSO_WEBHOOK_SECRET` with the same value. Configure the Flask backend's `DOCUMENSO_ORIGIN=https://sign.cal.taxi`, `DOCUMENSO_API_KEY`, and `SIGNING_STORAGE_DIR` on a durable volume. Restart services only after approved deployment.
+6. Test a contract using controlled addresses on desktop and phone before sending real links. Check that no invitation/completion email is sent, and that a recipient can access the completed copy using the distinct completed-copy link supplied by the admin. Documenso's personal signing URL ceases to be the final document access path after completion. The app stores the exact signed PDF and audit PDF in `SIGNING_STORAGE_DIR`.
+
+## Backups and recovery
+
+- Back up the **Documenso PostgreSQL volume**, the **signing certificate and passphrase**, and the **Flask SQLite database plus `SIGNING_STORAGE_DIR`** together. Encrypted off-host backups should include all four. The database default stores uploaded Documenso documents.
+- For PostgreSQL, run `docker compose exec -T database pg_dump -U documenso -Fc documenso > documenso.dump` to a protected off-host destination. Back up the certificate and signed PDFs separately. For SQLite, use its online `.backup` API or stop writes before copying the DB and WAL files; never copy only `orders.db` during active writes.
+- Restore PostgreSQL, SQLite, the certificate and exact PDF files to a staging host first, then verify envelope IDs, original hashes, signed PDF downloads and audit records. Keep the same Documenso encryption keys. Do not recreate completed PDFs from Typst templates.
+- Upgrades require a new pinned image digest and a backup before migrating the Documenso database. Confirm the live version's API schema and webhook verification before changing application code.
+
+## Manual delivery and certificate behavior
+
+Recipients receive no initial invitation or completed-copy email from Documenso for `NONE` distribution in v2.19.0. A controlled local test did receive an **owner** completion notification. The recipient confirmation page still says a copy will arrive by email, but the controlled test sent no recipient email. The administrator copies each personal signing link and each distinct completed-copy link from the order. The completed-copy link becomes usable only when every signer finishes and the app stores the signed file and audit record. If the contract is revised, the old pending Documenso envelope is cancelled; in the controlled test its old page still rendered, but an attempt to fill a field failed and the recipient remained unsigned. Previous records remain in the archive. Copying a link is never represented as sending it.
+
+The local v2.19.0 integration test used only `example.test` recipients and a non-relaying Mailpit instance. It created one three-recipient envelope, confirmed parallel account-free desktop and phone signing, typed and drawn signatures, automatic date fields, explicit final confirmation, partial progress, exact original retrieval, signed PDF and audit PDF storage, duplicate-safe sync, and cancellation behavior. The local container was not deployed to Minmus.
+
+Documenso CE is AGPL-3.0. Review its license obligations for your deployment. A self-signed `.p12` does not guarantee PDF trust indicators or legal compliance in every jurisdiction.
