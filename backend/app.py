@@ -279,7 +279,7 @@ def list_signing_revisions(order_id: str):
 @_require_admin_key
 def prepare_signing(order_id: str):
     body = _json_body()
-    revision = signing.prepare(store.get_conn(), order_id, body.get("payload"), body.get("requestKey"))
+    revision = signing.prepare(store.get_conn(), order_id, body.get("payload"), body.get("requestKey"), body.get("expectedLatestRevisionId"))
     return jsonify(revision=revision)
 
 

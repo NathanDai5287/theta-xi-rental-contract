@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import hmac
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from pathlib import Path
@@ -35,6 +36,31 @@ def _root() -> Path:
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
     return root
+
+
+@contextmanager
+def _order_lock(order_id: str):
+    """Serialize revisions across gunicorn workers before provider side effects."""
+    directory = _root() / ".locks"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    name = hashlib.sha256(order_id.encode()).hexdigest() + ".lock"
+    with os.fdopen(os.open(directory / name, os.O_RDWR | os.O_CREAT, 0o600), "r+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _path(revision_id: str, kind: str) -> Path:
@@ -149,7 +175,12 @@ def _assert_order_terms(order: dict[str, Any], payload: dict[str, Any]) -> None:
         raise SigningError("contract terms do not match the saved order", 409)
 
 
-def prepare(conn: sqlite3.Connection, order_id: str, payload: dict, request_key: str) -> dict[str, Any]:
+def prepare(conn: sqlite3.Connection, order_id: str, payload: dict, request_key: str, expected_latest_id: str | None = None) -> dict[str, Any]:
+    with _order_lock(order_id):
+        return _prepare_locked(conn, order_id, payload, request_key, expected_latest_id)
+
+
+def _prepare_locked(conn: sqlite3.Connection, order_id: str, payload: dict, request_key: str, expected_latest_id: str | None) -> dict[str, Any]:
     order = store.get_order(conn, order_id)
     if not order:
         raise SigningError("order not found", 404)
@@ -170,6 +201,8 @@ def prepare(conn: sqlite3.Connection, order_id: str, payload: dict, request_key:
         return _row(conn, existing)
 
     latest = conn.execute("SELECT * FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC LIMIT 1", (order_id,)).fetchone()
+    if expected_latest_id is not None and (not isinstance(expected_latest_id, str) or expected_latest_id != (latest["id"] if latest else "")):
+        raise SigningError("signing history changed elsewhere; reload this order before preparing a new contract")
     if not latest:
         _assert_order_terms(order, payload)
     if latest and latest["payload_hash"] == digest and latest["state"] not in ("cancelled", "failed"):

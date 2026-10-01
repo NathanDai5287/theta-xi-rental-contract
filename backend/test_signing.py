@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -77,6 +78,39 @@ def payload(presign, count=1):
     return _contract_payload(club_name="Alpha Club and Beta Club", club_names=["Alpha Club", "Beta Club"],
                              date="October 16, 2026", price="1400", deposit="300",
                              sign=presign, signers=signers)
+
+
+def test_prepare_rejects_stale_signing_history(archive):
+    conn, order = archive
+    first = signing.prepare(conn, order["id"], payload(True), "history-first-key-123", "")
+    changed = payload(True, 2)
+    with pytest.raises(signing.SigningError, match="history changed elsewhere"):
+        signing.prepare(conn, order["id"], changed, "history-stale-key-123", "")
+    assert signing.prepare(conn, order["id"], changed, "history-fresh-key-123", first["id"])["revision"] == 2
+
+
+def test_simultaneous_prepares_make_one_revision(archive):
+    _, order = archive
+
+    def attempt(count):
+        conn = store._connect()
+        try:
+            return signing.prepare(conn, order["id"], payload(True, count), f"parallel-key-{count:03d}-123", "")
+        finally:
+            conn.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda count: _capture_prepare(attempt, count), (1, 2)))
+    assert sum(isinstance(result, dict) for result in results) == 1
+    assert sum(isinstance(result, signing.SigningError) for result in results) == 1
+    assert "history changed elsewhere" in str(next(result for result in results if isinstance(result, signing.SigningError)))
+
+
+def _capture_prepare(attempt, count):
+    try:
+        return attempt(count)
+    except signing.SigningError as exc:
+        return exc
 
 
 @pytest.mark.parametrize("presign,count", [(True, 1), (False, 3)])
