@@ -13,10 +13,17 @@ The configuration pins Documenso v2.19.0 and PostgreSQL 16.10 by image digest. I
 
 ## Backups and recovery
 
+- Orders with signing history are removed from the working order list using `orders.deleted_at`; their revisions and exact PDF files remain stored. Startup adds this nullable column to existing databases. Delete cancels pending Documenso envelopes and verifies the result, retains inactive provider drafts, and stores completed files before removing the order. Retained PDF endpoints still require the admin key; previously issued completed-copy links continue working. Requests with an uncertain creation outcome must be reconciled before deletion. Orders without signing history continue to use the original permanent deletion behavior.
 - Back up the **Documenso PostgreSQL volume**, the **signing certificate and passphrase**, and the **Flask SQLite database plus `SIGNING_STORAGE_DIR`** together. Encrypted off-host backups should include all four. The database default stores uploaded Documenso documents.
 - For PostgreSQL, run `docker compose exec -T database pg_dump -U documenso -Fc documenso > documenso.dump` to a protected off-host destination. Back up the certificate and signed PDFs separately. For SQLite, use its online `.backup` API or stop writes before copying the DB and WAL files; never copy only `orders.db` during active writes.
 - Restore PostgreSQL, SQLite, the certificate and exact PDF files to a staging host first, then verify envelope IDs, original hashes, signed PDF downloads and audit records. Keep the same Documenso encryption keys. Do not recreate completed PDFs from Typst templates.
 - Upgrades require a new pinned image digest and a backup before migrating the Documenso database. Confirm the live version's API schema and webhook verification before changing application code.
+
+### Retained signing records after deletion
+
+Documenso v2.19 seals completed PDFs asynchronously. Deletion waits when all recipients have already signed; if sealing finishes across cancellation, the completion webhook still stores the exact final PDF and audit PDF for the removed order. It does not restore the order to the active list.
+
+If webhook delivery was interrupted, an operator can use the existing backend API with the protected `X-Admin-Key` header: `GET /api/orders/<order_id>/signing` lists retained revisions, and `POST /api/orders/<order_id>/signing/<revision_id>/sync` fetches current provider state and stores any completed files. These routes work for removed orders. Fetch retained files from `/api/orders/<order_id>/signing/<revision_id>/original.pdf`, `completed.pdf`, or `audit.pdf`. Keep keys and returned personal links out of shell history and logs. This is also the manual recovery path for late completion after cancellation; no provider request is recreated.
 
 ## Manual delivery and certificate behavior
 

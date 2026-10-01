@@ -1,8 +1,8 @@
 """Immutable hosting contract revisions and Documenso v2.19 envelopes.
 
 All writes run behind the backend admin key. PDF files are stored separately
-from the regenerable order-document metadata; deleting an order with signing
-history is blocked by the foreign key. Never log recipient links or tokens.
+from the regenerable order-document metadata; deleted orders retain their
+signing history and exact files. Never log recipient links or tokens.
 """
 from __future__ import annotations
 
@@ -414,8 +414,16 @@ def reconcile(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
     revision = get(conn, revision_id)
     if not revision:
         raise SigningError("revision not found", 404)
+    with _order_lock(revision["order_id"]):
+        if not store.get_order(conn, revision["order_id"]):
+            raise SigningError("order not found", 404)
+        return _reconcile_locked(conn, revision_id)
+
+
+def _reconcile_locked(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
+    revision = get(conn, revision_id)
     if revision["state"] == "created":
-        return create_links(conn, revision_id, revision["original_sha256"])
+        return _create_links_locked(conn, revision_id, revision["original_sha256"])
     if revision["state"] not in ("creating", "creation_uncertain"):
         return revision
     matches = []
@@ -442,7 +450,59 @@ def reconcile(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
     conn.execute("UPDATE signing_revisions SET envelope_id = ?, state = 'created', error = NULL, updated_at = ? WHERE id = ?",
                  (envelope_id, store.now_iso(), revision_id))
     conn.commit()
-    return create_links(conn, revision_id, revision["original_sha256"])
+    return _create_links_locked(conn, revision_id, revision["original_sha256"])
+
+
+def delete_order(conn: sqlite3.Connection, order_id: str) -> bool:
+    """Retire signing requests before removing the order from the working archive."""
+    with _order_lock(order_id):
+        order = conn.execute("SELECT deleted_at FROM orders WHERE id = ?", (order_id,)).fetchone()
+        if not order:
+            return False
+        if order["deleted_at"]:
+            return True
+        for revision in list_for_order(conn, order_id):
+            if revision["state"] == "signed":
+                continue
+            if revision["state"] in ("creating", "creation_uncertain") and not revision["envelope_id"]:
+                # Do not hide a request whose links may still become active.
+                raise SigningError("The signing request outcome is uncertain. Use Check and resume request, then retry deleting the order.")
+            people = revision["recipients"]
+            if revision["envelope_id"]:
+                envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
+                if envelope.get("id") != revision["envelope_id"] or envelope.get("externalId") != revision["id"]:
+                    raise SigningError("Could not verify the signing request before deleting the order", 502)
+                if envelope.get("status") == "PENDING":
+                    if envelope.get("recipients") and all(p.get("signingStatus") == "SIGNED" for p in envelope["recipients"]):
+                        raise SigningError("Everyone has signed and Documenso is preparing the completed contract. Wait for it to finish, then retry deleting the order.")
+                    _documenso("POST", "/envelope/cancel", body={"envelopeId": revision["envelope_id"], "reason": "Order deleted"})
+                    envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
+                _verify_provider_envelope(revision, envelope)
+                # Keep the latest per-person progress even for a cancelled request.
+                # Distribution may have succeeded before its response was lost.
+                existing = {p["email"].casefold(): p for p in revision["recipients"]}
+                people = [{"id": p["id"], "email": p["email"], "name": p["name"],
+                           "status": p["signingStatus"], "link": _link_from_token(p["token"]),
+                           "copyToken": existing.get(p["email"].casefold(), {}).get("copyToken") or secrets.token_urlsafe(32)}
+                          for p in envelope["recipients"]]
+                if envelope.get("status") == "COMPLETED":
+                    _verify_provider_original(revision, envelope)
+                    conn.execute("UPDATE signing_revisions SET state = 'preparing_completed_copy', recipients = ?, updated_at = ? WHERE id = ?",
+                                 (json.dumps(people), store.now_iso(), revision["id"]))
+                    conn.commit()
+                    if sync(conn, revision["id"])["state"] != "signed":
+                        raise SigningError("The completed contract is still being stored. Retry deleting the order after it finishes.")
+                    continue
+                # DRAFT has never been activated. v2.19 only cancels PENDING;
+                # retain the provider draft and prevent our app from distributing it.
+                if envelope.get("status") not in ("DRAFT", "CANCELLED", "REJECTED"):
+                    raise SigningError("Could not confirm that signing links are inactive. Retry deleting the order.")
+                if envelope.get("status") == "CANCELLED" and all(p["status"] == "SIGNED" for p in people):
+                    raise SigningError("Signing finished while cancellation was processing. Wait for the completed contract before retrying deletion.")
+            conn.execute("UPDATE signing_revisions SET state = 'cancelled', recipients = ?, error = NULL, updated_at = ? WHERE id = ?",
+                         (json.dumps(people), store.now_iso(), revision["id"]))
+            conn.commit()
+        return store.delete_order(conn, order_id)
 
 
 def _link_from_token(token: str) -> str:
@@ -473,9 +533,14 @@ def sync(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
     revision = get(conn, revision_id)
     if not revision:
         raise SigningError("revision not found", 404)
-    if not revision["envelope_id"] or revision["state"] in ("preview", "creating", "created", "cancelled", "signed"):
+    if not revision["envelope_id"] or revision["state"] in ("preview", "creating", "created", "signed"):
         return revision
     envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
+    # Documenso seals asynchronously: a completion can cross cancellation.
+    # Retain that completed evidence even after the order was removed, while
+    # never reviving a cancelled request on an older pending notification.
+    if revision["state"] == "cancelled" and envelope.get("status") != "COMPLETED":
+        return revision
     _verify_provider_envelope(revision, envelope)
     _verify_provider_original(revision, envelope)
     by_email = {p["email"].casefold(): p for p in envelope["recipients"]}

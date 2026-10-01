@@ -215,8 +215,10 @@ def test_one_envelope_all_people_and_exact_pdf(archive, monkeypatch, presign, co
     assert after_signing["documents"] == initial_order["documents"]
     assert after_signing["rentalPrice"] == initial_order["rentalPrice"]
     assert after_signing["depositAmount"] == initial_order["depositAmount"]
-    with pytest.raises(ValueError, match="signing history"):
-        store.delete_order(conn, order["id"])
+    assert signing.delete_order(conn, order["id"])
+    assert store.get_order(conn, order["id"]) is None
+    assert signing.get(conn, revision["id"])["state"] == "signed"
+    assert signing.completed_copy_for_token(conn, done["recipients"][0]["copyToken"]).exists()
 
 
 def test_revision_cancels_old_request_and_old_links(archive, monkeypatch):

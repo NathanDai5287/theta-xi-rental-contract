@@ -245,6 +245,84 @@ def test_delete_unknown_order_404(client, auth_headers):
     assert r.status_code == 404
 
 
+def test_delete_order_with_signing_preview(client, auth_headers, tmp_path, monkeypatch):
+    import signing
+    import store
+    from test_signing import payload
+
+    monkeypatch.setenv("SIGNING_STORAGE_DIR", str(tmp_path / "signing-files"))
+    body = _sample_order(clubName="Alpha Club and Beta Club", eventDate="2026-10-16",
+                         rentalPrice=1400, depositAmount=300, requestKey="delete-order-create-key-123")
+    created = client.post("/api/orders", json=body, headers=auth_headers).get_json()["order"]
+    conn = store._connect()
+    try:
+        revision = signing.prepare(conn, created["id"], payload(True), "delete-order-preview-key-123")
+        endpoint = f"/api/orders/{created['id']}"
+        assert client.delete(endpoint).status_code == 401
+        assert client.delete(endpoint, headers=auth_headers).status_code == 200
+        assert client.delete(endpoint, headers=auth_headers).status_code == 200
+        assert client.get(endpoint, headers=auth_headers).status_code == 404
+        assert client.get("/api/orders", headers=auth_headers).get_json()["orders"] == []
+        assert client.patch(endpoint, json={"notes": "revive"}, headers=auth_headers).status_code == 404
+        assert client.post(endpoint + "/documents", json=_sample_document(), headers=auth_headers).status_code == 404
+        assert client.post("/api/orders", json=body, headers=auth_headers).status_code == 400
+        assert client.get(endpoint + "/signing", headers=auth_headers).get_json()["revisions"][0]["id"] == revision["id"]
+        original = endpoint + f"/signing/{revision['id']}/original.pdf"
+        assert client.get(original).status_code == 401
+        assert client.get(original, headers=auth_headers).data == signing._path(revision["id"], "original").read_bytes()
+    finally:
+        conn.close()
+
+
+def test_deleted_order_accepts_late_completion_notification(client, auth_headers, tmp_path, monkeypatch):
+    import signing
+    import store
+    from test_signing import FakeDocumenso, payload
+
+    monkeypatch.setenv("SIGNING_STORAGE_DIR", str(tmp_path / "signing-files"))
+    monkeypatch.setenv("DOCUMENSO_ORIGIN", "https://sign.cal.taxi")
+    fake = FakeDocumenso()
+    monkeypatch.setattr(signing, "_documenso", fake)
+    body = _sample_order(clubName="Alpha Club and Beta Club", eventDate="2026-10-16", rentalPrice=1400, depositAmount=300)
+    created = client.post("/api/orders", json=body, headers=auth_headers).get_json()["order"]
+    conn = store._connect()
+    try:
+        revision = signing.prepare(conn, created["id"], payload(True), "delete-order-notify-key-123")
+        revision = signing.create_links(conn, revision["id"], revision["original_sha256"])
+        endpoint = f"/api/orders/{created['id']}"
+        assert client.delete(endpoint, headers=auth_headers).status_code == 200
+        envelope = fake.envelopes[revision["envelope_id"]]
+        envelope["status"] = "COMPLETED"
+        for person in envelope["recipients"]:
+            person["signingStatus"] = "SIGNED"
+        notification = f"/api/signing/notifications/{revision['id']}"
+        assert client.post(notification, json={"envelopeId": revision["envelope_id"]}).status_code == 401
+        for _ in range(2):
+            assert client.post(notification, json={"envelopeId": revision["envelope_id"]}, headers=auth_headers).status_code == 200
+        assert signing.get(conn, revision["id"])["state"] == "signed"
+        assert client.get(endpoint, headers=auth_headers).status_code == 404
+        assert client.post(endpoint + f"/signing/{revision['id']}/sync", headers=auth_headers).status_code == 200
+        completed = client.get(endpoint + f"/signing/{revision['id']}/completed.pdf", headers=auth_headers)
+        assert completed.data == signing._path(revision["id"], "completed").read_bytes()
+    finally:
+        conn.close()
+
+
+def test_deleted_at_migration_preserves_existing_orders(tmp_path):
+    import sqlite3
+    import store
+
+    path = str(tmp_path / "legacy.db")
+    store.init_db(path)
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE orders DROP COLUMN deleted_at")
+        conn.execute("INSERT INTO orders (id, created_at, updated_at, club_name, event_date, snapshot) VALUES ('ord_old', '2026-01-01', '2026-01-01', 'Alpha Club', '2026-10-16', '{}')")
+    store.init_db(path)
+    store.init_db(path)
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT club_name, deleted_at FROM orders WHERE id = 'ord_old'").fetchone() == ("Alpha Club", None)
+
+
 # ── documents ────────────────────────────────────────────────────────────
 
 def test_add_document_appends_and_returns_order(client, auth_headers):

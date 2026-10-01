@@ -250,7 +250,7 @@ def update_order(order_id: str):
 @_require_admin_key
 def delete_order(order_id: str):
     conn = store.get_conn()
-    if not store.delete_order(conn, order_id):
+    if not signing.delete_order(conn, order_id):
         return jsonify(error="not_found"), 404
     return jsonify(ok=True)
 
@@ -270,9 +270,10 @@ def add_order_document(order_id: str):
 @_require_admin_key
 def list_signing_revisions(order_id: str):
     conn = store.get_conn()
-    if not store.get_order(conn, order_id):
+    revisions = signing.list_for_order(conn, order_id)
+    if not revisions and not store.get_order(conn, order_id):
         return jsonify(error="not_found"), 404
-    return jsonify(revisions=signing.list_for_order(conn, order_id))
+    return jsonify(revisions=revisions)
 
 
 @app.post("/api/orders/<order_id>/signing/prepare")

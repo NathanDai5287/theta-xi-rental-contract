@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS orders (
     deposit_amount   REAL,
     status_override  TEXT,
     notes            TEXT NOT NULL DEFAULT '',
-    snapshot         TEXT NOT NULL
+    snapshot         TEXT NOT NULL,
+    deleted_at       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS documents (
@@ -146,6 +147,8 @@ def init_db(path: str | None = None) -> None:
         conn.executescript(_SCHEMA)
         if "request_hash" not in {row[1] for row in conn.execute("PRAGMA table_info(order_create_keys)")}:
             conn.execute("ALTER TABLE order_create_keys ADD COLUMN request_hash TEXT")
+        if "deleted_at" not in {row[1] for row in conn.execute("PRAGMA table_info(orders)")}:
+            conn.execute("ALTER TABLE orders ADD COLUMN deleted_at TEXT")
         conn.commit()
         _protect_db_files(target)
     finally:
@@ -317,7 +320,7 @@ def _order_summary_to_json(row: sqlite3.Row, doc_kinds: list[str], doc_count: in
 def list_orders(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """All orders, newest event first, as OrderSummary dicts."""
     order_rows = conn.execute(
-        "SELECT * FROM orders ORDER BY event_date DESC, created_at DESC"
+        "SELECT * FROM orders WHERE deleted_at IS NULL ORDER BY event_date DESC, created_at DESC"
     ).fetchall()
 
     doc_rows = conn.execute(
@@ -347,7 +350,7 @@ def list_orders(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def _fetch_order_row(conn: sqlite3.Connection, order_id: str) -> sqlite3.Row | None:
-    return conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    return conn.execute("SELECT * FROM orders WHERE id = ? AND deleted_at IS NULL", (order_id,)).fetchone()
 
 
 def _fetch_documents(conn: sqlite3.Connection, order_id: str) -> list[sqlite3.Row]:
@@ -388,7 +391,10 @@ def create_order(conn: sqlite3.Connection, body: Any) -> dict[str, Any]:
             conn.commit()
             if prior["request_hash"] != request_hash:
                 raise ValueError("requestKey belongs to different order details; reconcile the original save")
-            return get_order(conn, prior["order_id"])  # type: ignore[return-value]
+            saved = get_order(conn, prior["order_id"])
+            if not saved:
+                raise ValueError("this order was deleted; start a new order instead of retrying its original save")
+            return saved
 
     club_name = body.get("clubName")
     if not isinstance(club_name, str) or not club_name.strip():
@@ -519,12 +525,19 @@ def update_order(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str
 
 
 def delete_order(conn: sqlite3.Connection, order_id: str) -> bool:
-    """Delete an order (and its documents, via ON DELETE CASCADE). Returns whether it existed."""
-    if _fetch_order_row(conn, order_id) is None:
+    """Remove an order, retaining exact signing records after requests are retired."""
+    row = conn.execute("SELECT deleted_at FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:
         return False
+    if row["deleted_at"]:
+        return True
     if conn.execute("SELECT 1 FROM signing_revisions WHERE order_id = ? LIMIT 1", (order_id,)).fetchone():
-        raise ValueError("orders with signing history cannot be deleted")
-    conn.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+        if conn.execute("SELECT 1 FROM signing_revisions WHERE order_id = ? AND state NOT IN ('cancelled', 'signed') LIMIT 1", (order_id,)).fetchone():
+            raise ValueError("retire outstanding signing requests before deleting this order")
+        stamp = now_iso()
+        conn.execute("UPDATE orders SET deleted_at = ?, updated_at = ? WHERE id = ?", (stamp, stamp, order_id))
+    else:
+        conn.execute("DELETE FROM orders WHERE id = ?", (order_id,))
     conn.commit()
     return True
 
