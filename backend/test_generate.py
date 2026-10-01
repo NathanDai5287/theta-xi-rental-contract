@@ -72,6 +72,27 @@ def _contract_payload(**overrides):
     return body
 
 
+@pytest.mark.parametrize("instant,expected", [
+    ("2026-10-01T01:00:00+00:00", "September 30, 2026"),
+    ("2026-01-01T07:30:00+00:00", "December 31, 2025"),
+])
+def test_presign_uses_pacific_calendar_date(monkeypatch, instant, expected):
+    from generators import contract
+    actual_datetime = contract.datetime.datetime
+    moment = actual_datetime.fromisoformat(instant)
+
+    class FrozenDateTime(actual_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment.astimezone(tz)
+
+    replacements = {}
+    monkeypatch.setattr(contract.datetime, "datetime", FrozenDateTime)
+    monkeypatch.setattr(contract, "render_typst", lambda template, values: replacements.update(values) or b"%PDF-test")
+    contract.generate_contract(_contract_payload(sign=True))
+    assert replacements["«SIG_DATE»"] == expected
+
+
 @needs_typst
 @pytest.mark.parametrize("presigned", [False, True])
 def test_signing_pages_cover_each_party(client, auth_headers, presigned):

@@ -24,6 +24,8 @@ import requests
 import store
 from generators.contract import _resolve_clubs, _signing_representatives, generate_contract, signing_field_pages
 
+SIGNING_TIMEZONE = "America/Los_Angeles"
+
 
 class SigningError(Exception):
     def __init__(self, message: str, status: int = 409):
@@ -286,7 +288,7 @@ def _create_links_locked(conn: sqlite3.Connection, revision_id: str, approved_sh
         payload = {"type": "DOCUMENT", "title": f"Hosting Contract {revision['order_id']} · revision {revision['revision']}",
                    "externalId": revision_id, "recipients": recipients,
                    "globalAccessAuth": [], "globalActionAuth": [],
-                   "meta": {"distributionMethod": "NONE", "signingOrder": "PARALLEL",
+                   "meta": {"distributionMethod": "NONE", "signingOrder": "PARALLEL", "timezone": SIGNING_TIMEZONE,
                             "typedSignatureEnabled": True, "drawSignatureEnabled": True,
                             "uploadSignatureEnabled": False}}
         try:
@@ -314,8 +316,17 @@ def _create_links_locked(conn: sqlite3.Connection, revision_id: str, approved_sh
         links = [{"id": p["id"], "email": p["email"], "name": p["name"],
                   "status": p["signingStatus"], "link": _link_from_token(p["token"])} for p in people]
     elif envelope.get("status") == "DRAFT":
+        if (envelope.get("documentMeta") or {}).get("timezone") != SIGNING_TIMEZONE:
+            # Resume older drafts safely without activating links until the setting is verified.
+            _documenso("POST", "/envelope/update", body={"envelopeId": revision["envelope_id"],
+                        "meta": {"timezone": SIGNING_TIMEZONE}})
+            envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
+            _verify_provider_envelope(revision, envelope)
+            _verify_provider_original(revision, envelope)
+            if envelope.get("status") != "DRAFT" or (envelope.get("documentMeta") or {}).get("timezone") != SIGNING_TIMEZONE:
+                raise SigningError("Could not verify Pacific signing time before distributing links", 502)
         _documenso("POST", "/envelope/distribute", body={"envelopeId": revision["envelope_id"],
-                    "meta": {"distributionMethod": "NONE"}})
+                    "meta": {"distributionMethod": "NONE", "timezone": SIGNING_TIMEZONE}})
         envelope = _documenso("GET", f"/envelope/{revision['envelope_id']}")
         _verify_provider_envelope(revision, envelope)
         _verify_provider_original(revision, envelope)
@@ -325,6 +336,8 @@ def _create_links_locked(conn: sqlite3.Connection, revision_id: str, approved_sh
                   "status": p["signingStatus"], "link": _link_from_token(p["token"])} for p in envelope["recipients"]]
     else:
         raise SigningError("envelope state needs reconciliation before links can be shown")
+    if (envelope.get("documentMeta") or {}).get("timezone") != SIGNING_TIMEZONE:
+        raise SigningError("This request needs its signing timezone corrected to America/Los_Angeles before links can be returned", 502)
     expected = {s["email"].casefold() for s in revision["signers"]}
     if {p["email"].casefold() for p in links} != expected:
         raise SigningError("Documenso recipients differ from the approved contract")

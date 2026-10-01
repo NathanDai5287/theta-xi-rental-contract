@@ -20,6 +20,8 @@ The configuration pins Documenso v2.19.0 and PostgreSQL 16.10 by image digest. I
 
 ## Manual delivery and certificate behavior
 
+New signing requests use `America/Los_Angeles` for Documenso's automatic signing date fields. Theta Xi's existing automatic signature uses the same Pacific calendar date, including daylight saving time. Existing completed PDFs are never rewritten when timezone settings change.
+
 Recipients receive no initial invitation or completed-copy email from Documenso for `NONE` distribution in v2.19.0. A controlled local test did receive an **owner** completion notification. The recipient confirmation page still says a copy will arrive by email, but the controlled test sent no recipient email. The administrator copies each personal signing link and each distinct completed-copy link from the order. The completed-copy link becomes usable only when every signer finishes and the app stores the signed file and audit record. If the contract is revised, the old pending Documenso envelope is cancelled; in the controlled test its old page still rendered, but an attempt to fill a field failed and the recipient remained unsigned. Previous records remain in the archive. Copying a link is never represented as sending it.
 
 The local v2.19.0 integration test used only `example.test` recipients and a non-relaying Mailpit instance. It created one three-recipient envelope, confirmed parallel account-free desktop and phone signing, typed and drawn signatures, automatic date fields, explicit final confirmation, partial progress, exact original retrieval, signed PDF and audit PDF storage, duplicate-safe sync, and cancellation behavior. The local container was not deployed to Minmus.

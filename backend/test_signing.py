@@ -50,8 +50,13 @@ class FakeDocumenso:
                                             "fields": fields, "documentMeta": body["meta"],
                                             "envelopeItems": [{"id": item_id}]}
             return {"id": envelope_id}
+        if path == "/envelope/update":
+            envelope = self.envelopes[body["envelopeId"]]
+            envelope["documentMeta"].update(body["meta"])
+            return envelope
         if path == "/envelope/distribute":
             envelope = self.envelopes[body["envelopeId"]]
+            envelope["documentMeta"].update(body.get("meta", {}))
             envelope["status"] = "PENDING"
             return {"recipients": [{**p, "signingUrl": f"https://sign.cal.taxi/sign/{p['token']}"}
                                    for p in envelope["recipients"]]}
@@ -176,6 +181,7 @@ def test_one_envelope_all_people_and_exact_pdf(archive, monkeypatch, presign, co
     assert uploaded_pdf == original
     assert request["meta"]["distributionMethod"] == "NONE"
     assert request["meta"]["signingOrder"] == "PARALLEL"
+    assert request["meta"]["timezone"] == "America/Los_Angeles"
     assert request["meta"]["typedSignatureEnabled"] and request["meta"]["drawSignatureEnabled"]
     assert {p["email"] for p in request["recipients"]} == {p["email"] for p in contract["signers"]}
     assert all(len(p["fields"]) == 3 for p in request["recipients"])
@@ -246,6 +252,35 @@ def test_completed_previous_request_is_archived_before_new_revision(archive, mon
     prior = signing.get(conn, first["id"])
     assert prior["state"] == "signed"
     assert prior["files"]["completed"] and prior["files"]["audit"]
+
+
+@pytest.mark.parametrize("provider_status", ["DRAFT", "PENDING"])
+def test_legacy_timezone_recovery(archive, monkeypatch, provider_status):
+    conn, order = archive
+    fake = FakeDocumenso()
+    original = fake.__call__
+
+    def interrupted_legacy_request(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        if path == "/envelope/create":
+            envelope = fake.envelopes[result["id"]]
+            envelope["documentMeta"]["timezone"] = "UTC"
+            envelope["status"] = provider_status
+        return result
+
+    monkeypatch.setattr(signing, "_documenso", interrupted_legacy_request)
+    revision = signing.prepare(conn, order["id"], payload(True), "legacy-timezone-key-123")
+    if provider_status == "PENDING":
+        with pytest.raises(signing.SigningError, match="timezone corrected"):
+            signing.create_links(conn, revision["id"], revision["original_sha256"])
+        assert signing.get(conn, revision["id"])["state"] == "created"
+        assert not signing.get(conn, revision["id"])["recipients"]
+        # An operator can correct the unsigned envelope and resume without a duplicate.
+        fake.envelopes["envelope_1"]["documentMeta"]["timezone"] = signing.SIGNING_TIMEZONE
+    linked = signing.create_links(conn, revision["id"], revision["original_sha256"])
+    assert linked["state"] == "awaiting_signatures"
+    assert fake.envelopes[linked["envelope_id"]]["documentMeta"]["timezone"] == signing.SIGNING_TIMEZONE
+    assert len(fake.created) == 1
 
 
 def test_provider_field_change_blocks_distribution(archive, monkeypatch):

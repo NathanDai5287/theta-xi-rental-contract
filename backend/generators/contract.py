@@ -18,6 +18,7 @@ built below from fixed strings, computed numbers, and those same bindings.
 from __future__ import annotations
 
 import datetime
+from zoneinfo import ZoneInfo
 import math
 import re
 from io import BytesIO
@@ -516,7 +517,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
     repl["«SIGNATURE_PAGES»"] = _signing_pages(signers)
 
     if sign:
-        d = datetime.date.today()
+        d = datetime.datetime.now(ZoneInfo("America/Los_Angeles")).date()
         repl["«IS_SIGNED»"] = "true"
         repl["«SIG_DATE»"]  = f"{d:%B} {d.day}, {d.year}"
     else:
