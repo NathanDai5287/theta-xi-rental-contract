@@ -42,6 +42,7 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
 import store
+import signing
 from generators import generate_contract, generate_credit_memo, generate_invoice
 from generators.base import (
     TypstCompileError,
@@ -98,6 +99,11 @@ def _handle_value_error(e: ValueError):
     return jsonify(error="invalid_input", detail=str(e)), 400
 
 
+@app.errorhandler(signing.SigningError)
+def _handle_signing_error(e: signing.SigningError):
+    return jsonify(error="signing_error", detail=str(e)), e.status
+
+
 @app.errorhandler(413)
 def _handle_too_large(e):
     return jsonify(error="payload_too_large"), 413
@@ -126,13 +132,26 @@ def _json_body() -> dict[str, Any]:
     return body
 
 
+def _generation_payload(kind):
+    body = _json_body()
+    source = body.get("_document_source")
+    payload = {key: value for key, value in body.items() if key != "_document_source"}
+    if source is not None:
+        store._require_json_object(source, "document source")
+        if not source.get("documentContextId"):
+            raise ValueError("document source requires an owner")
+        store._validate_document_owner({"kind": kind, "payload": payload, "sourceSnapshot": source}, source, store._clubs_display(source.get("clubs", [])), source.get("eventDate"))
+    return payload
+
 def _pdf_response(pdf_bytes: bytes, filename: str):
-    return send_file(
-        BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=filename,
-    )
+    response = send_file(BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=filename)
+    body = request.get_json(silent=True) or {}
+    source = body.get("_document_source")
+    if source is not None:
+        kinds = {"/api/generate/contract": "contract", "/api/generate/invoice/deposit": "deposit_invoice", "/api/generate/invoice/rental": "rental_invoice", "/api/generate/credit-memo": "credit_memo"}
+        payload = {key: value for key, value in body.items() if key != "_document_source"}
+        response.headers["X-Document-Receipt"] = store.document_receipt(kinds[request.path], payload, source, filename)
+    return response
 
 
 def _require_admin_key(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -167,14 +186,14 @@ def health():
 @app.post("/api/generate/contract")
 @_require_admin_key
 def contract():
-    payload = _json_body()
+    payload = _generation_payload("contract")
     pdf = generate_contract(payload)
     club = slug(str(payload.get("club_name", "partner")))
     return _pdf_response(pdf, f"theta_xi_{club}_contract.pdf")
 
 
 def _invoice_route(kind: str):
-    payload = _json_body()
+    payload = _generation_payload("deposit_invoice" if kind == "deposit" else "rental_invoice")
     payload["kind"] = kind
     pdf, number = generate_invoice(payload)
     return _pdf_response(pdf, f"{number}.pdf")
@@ -195,7 +214,7 @@ def invoice_rental():
 @app.post("/api/generate/credit-memo")
 @_require_admin_key
 def credit_memo():
-    payload = _json_body()
+    payload = _generation_payload("credit_memo")
     pdf, number = generate_credit_memo(payload)
     return _pdf_response(pdf, f"{number}.pdf")
 
@@ -244,7 +263,7 @@ def update_order(order_id: str):
 @_require_admin_key
 def delete_order(order_id: str):
     conn = store.get_conn()
-    if not store.delete_order(conn, order_id):
+    if not signing.delete_order(conn, order_id):
         return jsonify(error="not_found"), 404
     return jsonify(ok=True)
 
@@ -258,6 +277,113 @@ def add_order_document(order_id: str):
     if order is None:
         return jsonify(error="not_found"), 404
     return jsonify(order=order), 201
+
+
+@app.get("/api/orders/<order_id>/signing")
+@_require_admin_key
+def list_signing_revisions(order_id: str):
+    conn = store.get_conn()
+    revisions = signing.list_for_order(conn, order_id)
+    if not revisions and not store.get_order(conn, order_id):
+        return jsonify(error="not_found"), 404
+    return jsonify(revisions=revisions)
+
+
+@app.post("/api/orders/<order_id>/signing/prepare")
+@_require_admin_key
+def prepare_signing(order_id: str):
+    body = _json_body()
+    order = store.get_order(store.get_conn(), order_id)
+    if not order:
+        return jsonify(error="not_found"), 404
+    if not isinstance(order["snapshot"].get("contractSigners"), list):
+        raise signing.SigningError("save this order's named representatives before preparing a signing revision", 409)
+    revision = signing.prepare(store.get_conn(), order_id, body.get("payload"), body.get("requestKey"), body.get("expectedLatestRevisionId"))
+    return jsonify(revision=revision)
+
+
+@app.get("/api/orders/<order_id>/signing/<revision_id>")
+@_require_admin_key
+def get_signing_revision(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    return jsonify(revision=revision)
+
+
+@app.post("/api/orders/<order_id>/signing/<revision_id>/create-links")
+@_require_admin_key
+def create_signing_links(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    body = _json_body()
+    created = signing.create_links(store.get_conn(), revision_id, body.get("approvedSha256"), body.get("activation"))
+    return jsonify(revision=created)
+
+
+@app.post("/api/orders/<order_id>/signing/<revision_id>/sync")
+@_require_admin_key
+def sync_signing(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    return jsonify(revision=signing.sync(store.get_conn(), revision_id))
+
+
+@app.post("/api/orders/<order_id>/signing/<revision_id>/link-delivery")
+@_require_admin_key
+def mark_signing_link_delivery(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    body = _json_body()
+    return jsonify(revision=signing.mark_link_sent(store.get_conn(), revision_id, body.get("email"), body.get("sent")))
+
+
+@app.post("/api/orders/<order_id>/signing/<revision_id>/reconcile")
+@_require_admin_key
+def reconcile_signing(order_id: str, revision_id: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    return jsonify(revision=signing.reconcile(store.get_conn(), revision_id))
+
+
+@app.get("/api/orders/<order_id>/signing/<revision_id>/<kind>.pdf")
+@_require_admin_key
+def download_signing_file(order_id: str, revision_id: str, kind: str):
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or revision["order_id"] != order_id:
+        return jsonify(error="not_found"), 404
+    if kind not in ("original", "completed", "audit"):
+        return jsonify(error="not_found"), 404
+    path = signing._path(revision_id, kind)
+    if not path.exists() or (kind != "original" and revision["state"] != "signed"):
+        return jsonify(error="not_ready"), 404
+    return send_file(path, mimetype="application/pdf", as_attachment=True,
+                     download_name=f"{revision_id}-{kind}.pdf")
+
+
+@app.post("/api/signing/notifications/<revision_id>")
+@_require_admin_key
+def signing_notification(revision_id: str):
+    body = _json_body()
+    revision = signing.get(store.get_conn(), revision_id)
+    if not revision or not revision["envelope_id"] or body.get("envelopeId") != revision["envelope_id"]:
+        return jsonify(error="not_found"), 404
+    # The incoming event is only a hint. sync() fetches current state from
+    # Documenso, so duplicate and delayed events cannot regress progress.
+    signing.sync(store.get_conn(), revision_id)
+    return jsonify(ok=True)
+
+
+@app.post("/api/signing/completed-copy")
+@_require_admin_key
+def completed_signing_copy():
+    path = signing.completed_copy_for_token(store.get_conn(), _json_body().get("token"))
+    return send_file(path, mimetype="application/pdf", as_attachment=True,
+                     download_name="completed-hosting-contract.pdf")
 
 
 if __name__ == "__main__":

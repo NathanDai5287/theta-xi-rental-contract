@@ -72,6 +72,85 @@ def _contract_payload(**overrides):
     return body
 
 
+@pytest.mark.parametrize("instant,expected", [
+    ("2026-10-01T01:00:00+00:00", "September 30, 2026"),
+    ("2026-01-01T07:30:00+00:00", "December 31, 2025"),
+])
+def test_presign_uses_pacific_calendar_date(monkeypatch, instant, expected):
+    from generators import contract
+    actual_datetime = contract.datetime.datetime
+    moment = actual_datetime.fromisoformat(instant)
+
+    class FrozenDateTime(actual_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment.astimezone(tz)
+
+    replacements = {}
+    monkeypatch.setattr(contract.datetime, "datetime", FrozenDateTime)
+    monkeypatch.setattr(contract, "render_typst", lambda template, values: replacements.update(values) or b"%PDF-test")
+    contract.generate_contract(_contract_payload(sign=True))
+    assert replacements["«SIG_DATE»"] == expected
+
+
+@needs_typst
+@pytest.mark.parametrize("presigned", [False, True])
+def test_signing_pages_cover_each_party(client, auth_headers, presigned):
+    from generators.contract import signing_field_pages
+
+    signers = [
+        {"fullName": "Alexandra Rivera", "email": "alex@example.test", "club": "Alpha Club", "role": "club"},
+        {"fullName": "Benjamin Longname With Several Middle Names", "email": "ben@example.test", "club": "Beta Club", "role": "club"},
+    ]
+    if not presigned:
+        signers.append({"fullName": "Taylor Xi", "email": "taylor@example.test", "club": "Theta Xi Fraternity", "role": "chapter"})
+    response = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(club_names=["Alpha Club", "Beta Club"], sign=presigned, signers=signers),
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    layout = signing_field_pages(response.data, signers)
+    assert [item["email"] for item in layout] == [item["email"] for item in signers]
+    reader = pypdf.PdfReader(BytesIO(response.data))
+    assert len({item["page"] for item in layout}) == len(signers)
+    for index, item in enumerate(layout):
+        text = reader.pages[item["page"] - 1].extract_text()
+        assert signers[index]["fullName"] in text
+        assert signers[index]["club"] in text
+        assert "@" not in text
+
+
+@needs_typst
+def test_signing_page_rejects_missing_club_signer(client, auth_headers):
+    response = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(club_names=["Alpha Club", "Beta Club"], sign=True, signers=[
+            {"fullName": "Alex Rivera", "email": "alex@example.test", "club": "Alpha Club", "role": "club"},
+        ]),
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+
+
+@needs_typst
+def test_long_signer_name_stays_on_its_own_execution_page(client, auth_headers):
+    from generators.contract import signing_field_pages
+
+    long_name = "Alexandra Katherine Montgomery Rivera With A Very Long Representative Name"
+    person = {"fullName": long_name, "email": "alex@example.test", "club": "Alpha Club", "role": "club"}
+    response = client.post(
+        "/api/generate/contract",
+        json=_contract_payload(club_names=["Alpha Club"], sign=True, signers=[person]),
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    layout = signing_field_pages(response.data, [person])
+    page = pypdf.PdfReader(BytesIO(response.data)).pages[layout[0]["page"] - 1]
+    assert " ".join(long_name.split()) in " ".join((page.extract_text() or "").split())
+    assert len(layout[0]["fields"]) == 3
+
+
 def _invoice_payload(**overrides):
     body = {
         "club_name": "Pi Sigma Delta",

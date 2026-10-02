@@ -193,3 +193,11 @@ All four PDFs import [`backend/templates/_shared.typ`](./backend/templates/_shar
 - The `page_footer(footer_left)` helper
 
 Logo and signature images are PNGs at `backend/assets/shield.png` and `backend/assets/signature.png`. Replace those files to swap branding.
+
+## Document ownership migration
+
+The archive adds `documents.source_snapshot` and a unique index on nonempty order snapshot `documentContextId` at startup. Before upgrading, use SQLite's backup API on the configured `ORDERS_DB_PATH`, check `json_valid(snapshot)` and duplicate nonempty context IDs, then restart the API. Keep the backup outside the checkout with mode 0600. Migration is idempotent and preserves all document rows, signing revisions/files, status overrides, and financial meaning.
+
+New document attachments require their approved source snapshot, the generator's `X-Document-Receipt`, and the reviewed `expectedUpdatedAt`. The receipt uses the existing server `ADMIN_KEY`; no new credential is required. Deploy the matching admin application at the same time. Unscoped legacy documents remain ledger/history records but are never regenerated as current PDFs. Exact signing originals/completed files remain authoritative. A signer-only update does not invalidate verified financial documents.
+
+Run `python -m pytest backend/test_document_isolation.py backend/test_orders.py backend/test_signing.py backend/test_signing_delete.py backend/test_generate.py -q` before rollout. These tests use temporary databases and controlled addresses; they do not contact live signers.

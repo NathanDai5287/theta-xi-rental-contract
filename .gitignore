@@ -15,6 +15,12 @@ venv/
 backend/orders.db
 backend/orders.db-wal
 backend/orders.db-shm
+backend/contract-files/
+deploy/documenso/.env
+deploy/documenso/secrets/
+deploy/documenso/test.override.yaml
+deploy/documenso/local-*
+deploy/documenso/*.png
 
 # Node / Next.js
 node_modules/

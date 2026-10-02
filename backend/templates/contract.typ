@@ -123,6 +123,22 @@ This Agreement is governed by the laws of the State of California, and any dispu
 This Agreement constitutes the entire understanding between Theta Xi Fraternity and #TERM concerning the event rental. Any modifications or amendments to this Agreement must be made in writing and signed by both parties.
 
 // ===================== SIGNATURES ====================================
+#if «SIGNING_MODE» [
+  #v(28pt)
+  #line(length: 100%, stroke: 1.2pt + brand)
+  #v(6pt)
+  #text(size: 8pt, weight: "medium", tracking: 1.6pt, fill: brand)[EXECUTION]
+  #v(12pt)
+  The named representatives sign on the individual execution pages that follow.
+  #if SIGNED [
+    #v(16pt)
+    #text(size: 9.5pt, weight: "bold")[Theta Xi Fraternity Executive Board]
+    #v(4pt)
+    #image("signature.png", height: 48pt)
+    #v(3pt)
+    #text(size: 9pt)[#SIG_DATE]
+  ]
+] else [
 #v(28pt)
 
 // SIG_BLOCK_BREAKABLE is substituted by the generator: with 5+ renter
@@ -184,3 +200,6 @@ This Agreement constitutes the entire understanding between Theta Xi Fraternity 
     «RENTER_SIG_COLUMN»
   )
 ]
+]
+
+«SIGNATURE_PAGES»
