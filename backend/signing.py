@@ -213,29 +213,12 @@ def _prepare_locked(conn: sqlite3.Connection, order_id: str, payload: dict, requ
         _assert_order_terms(order, payload)
     if latest and latest["payload_hash"] == digest and latest["state"] not in ("cancelled", "failed"):
         return _row(conn, latest)
-    if latest and latest["state"] in ("creating", "creation_uncertain", "created", "preparing_completed_copy"):
+    if conn.execute("SELECT 1 FROM signing_revisions WHERE order_id = ? AND state IN ('activating', 'creating', 'creation_uncertain', 'created', 'preparing_completed_copy')", (order_id,)).fetchone():
         raise SigningError("prior revision is still processing; refresh its status before revising")
-    # Validate and render the replacement before retiring live links. A bad
-    # name or Typst failure must not cancel a usable prior contract.
+    # A preview is inert: rendering never changes an existing envelope or
+    # the saved order. Retire outstanding links only during confirmed activation.
     pdf = generate_contract(payload)
     fields = signing_field_pages(pdf, signers)
-    if latest and latest["state"] == "awaiting_signatures":
-        if not latest["envelope_id"]:
-            raise SigningError("prior request outcome is unknown; reconcile it in Documenso first")
-        # Cancel preserves the previous envelope and invalidates pending links.
-        envelope = _documenso("GET", f"/envelope/{latest['envelope_id']}")
-        if envelope.get("status") == "PENDING":
-            _documenso("POST", "/envelope/cancel", body={"envelopeId": latest["envelope_id"], "reason": "Contract revised"})
-            conn.execute("UPDATE signing_revisions SET state = 'cancelled', updated_at = ? WHERE id = ?",
-                         (store.now_iso(), latest["id"]))
-            conn.commit()
-        elif envelope.get("status") != "COMPLETED":
-            raise SigningError("previous request cannot be safely cancelled; refresh its status")
-        else:
-            completed = sync(conn, latest["id"])
-            if completed["state"] != "signed":
-                raise SigningError("store the completed previous contract before preparing another revision")
-
     revision_id = store.new_id("sig")
     revision_number = (latest["revision"] if latest else 0) + 1
     _save_file(revision_id, "original", pdf)
@@ -250,15 +233,15 @@ def _prepare_locked(conn: sqlite3.Connection, order_id: str, payload: dict, requ
     return get(conn, revision_id)  # type: ignore[return-value]
 
 
-def create_links(conn: sqlite3.Connection, revision_id: str, approved_sha256: str) -> dict[str, Any]:
+def create_links(conn: sqlite3.Connection, revision_id: str, approved_sha256: str, activation: dict | None = None) -> dict[str, Any]:
     revision = get(conn, revision_id)
     if not revision:
         raise SigningError("revision not found", 404)
     with _order_lock(revision["order_id"]):
-        return _create_links_locked(conn, revision_id, approved_sha256)
+        return _create_links_locked(conn, revision_id, approved_sha256, activation)
 
 
-def _create_links_locked(conn: sqlite3.Connection, revision_id: str, approved_sha256: str) -> dict[str, Any]:
+def _create_links_locked(conn: sqlite3.Connection, revision_id: str, approved_sha256: str, activation: dict | None = None) -> dict[str, Any]:
     revision = get(conn, revision_id)
     if not revision:
         raise SigningError("revision not found", 404)
@@ -269,17 +252,86 @@ def _create_links_locked(conn: sqlite3.Connection, revision_id: str, approved_sh
     order = store.get_order(conn, revision["order_id"])
     if not order:
         raise SigningError("order not found", 404)
-    _assert_order_terms(order, revision["payload"])
     if revision["original_sha256"] != approved_sha256:
         raise SigningError("preview has changed; review the current PDF before signing")
     if revision["state"] == "awaiting_signatures" or revision["state"] == "signed":
         return revision
-    if revision["state"] not in ("preview", "created"):
+    if revision["state"] not in ("preview", "activating", "created"):
         raise SigningError("request is processing or needs reconciliation; no duplicate will be created")
 
     if revision["state"] == "preview":
+        pending = conn.execute("SELECT * FROM signing_revisions WHERE order_id = ? AND id != ? AND state = 'awaiting_signatures' ORDER BY revision", (revision["order_id"], revision_id)).fetchall()
+        processing = conn.execute("SELECT 1 FROM signing_revisions WHERE order_id = ? AND id != ? AND state IN ('activating', 'creating', 'created', 'creation_uncertain', 'preparing_completed_copy')", (revision["order_id"], revision_id)).fetchone()
+        if processing:
+            raise SigningError("a previous request is still processing; refresh before activating a replacement")
+        if pending and activation is None:
+            raise SigningError("confirm replacement of outstanding signing links before activating this revision")
+        if activation is not None:
+            if not isinstance(activation, dict) or activation.get("expectedUpdatedAt") != order["updatedAt"]:
+                raise SigningError("order changed since review; reload before creating signing links")
+            if not isinstance(activation.get("replacesRevisionIds"), list) or sorted(activation["replacesRevisionIds"]) != sorted(row["id"] for row in pending):
+                raise SigningError("outstanding signing requests changed; review replacement again")
+            keys = ("clubName", "eventDate", "rentalPrice", "depositAmount", "snapshot")
+            if any(key not in activation for key in keys):
+                raise SigningError("approved order terms are required", 400)
+            candidate = {**order, **{key: activation[key] for key in keys}}
+            _assert_order_terms(candidate, revision["payload"])
+            store._validate_snapshot_owner(activation["snapshot"], revision["order_id"], activation["clubName"], activation["eventDate"], activation["rentalPrice"], activation["depositAmount"])
+            if order["snapshot"].get("documentContextId") and activation["snapshot"].get("documentContextId") != order["snapshot"]["documentContextId"]:
+                raise SigningError("document owner cannot change during contract approval")
+        else:
+            _assert_order_terms(order, revision["payload"])
+            activation = {key: order[key] for key in ("clubName", "eventDate", "rentalPrice", "depositAmount", "snapshot")}
+            activation.update(expectedUpdatedAt=order["updatedAt"], replacesRevisionIds=[])
+        activation = {**activation, "baselineOrderTerms": {key: order[key] for key in ("clubName", "eventDate", "rentalPrice", "depositAmount", "snapshot")}}
+        # Persist approval before side effects; an interrupted activation resumes
+        # this exact approved revision rather than recancelling or creating anew.
+        conn.execute("UPDATE signing_revisions SET state = 'activating', approved_order_patch = ?, updated_at = ? WHERE id = ? AND state = 'preview'", (json.dumps(activation), store.now_iso(), revision_id))
+        conn.commit()
+        revision = get(conn, revision_id)
+
+    if revision["state"] == "activating":
+        activation = json.loads(revision["approved_order_patch"])
+        same_terms = all(order[key] == activation[key] for key in ("clubName", "eventDate", "rentalPrice", "depositAmount")) and store._terms(order["snapshot"]) == store._terms(activation["snapshot"])
+        baseline = activation["baselineOrderTerms"]
+        same_baseline = all(order[key] == baseline[key] for key in ("clubName", "eventDate", "rentalPrice", "depositAmount")) and store._terms(order["snapshot"]) == store._terms(baseline["snapshot"])
+        if order["updatedAt"] != activation["expectedUpdatedAt"] and not same_terms and not same_baseline:
+            raise SigningError("order changed since approval; review before resuming activation")
+        for prior_id in activation["replacesRevisionIds"]:
+            prior = get(conn, prior_id)
+            if not prior or prior["order_id"] != revision["order_id"]:
+                raise SigningError("previous signing request identity changed")
+            if prior["state"] in ("cancelled", "signed"):
+                continue
+            if not prior["envelope_id"]:
+                raise SigningError("prior request outcome is unknown; reconcile it first")
+            envelope = _documenso("GET", f"/envelope/{prior['envelope_id']}")
+            _verify_provider_envelope(prior, envelope)
+            if envelope.get("status") == "PENDING" and envelope.get("recipients") and all(person.get("signingStatus") == "SIGNED" for person in envelope["recipients"]):
+                raise SigningError("everyone has signed the previous contract; wait for its completed copy before replacing it")
+            if envelope.get("status") == "PENDING":
+                _documenso("POST", "/envelope/cancel", body={"envelopeId": prior["envelope_id"], "reason": "Contract revised after administrator approval"})
+                envelope = _documenso("GET", f"/envelope/{prior['envelope_id']}")
+                _verify_provider_envelope(prior, envelope)
+            if envelope.get("status") == "COMPLETED":
+                if sync(conn, prior["id"])["state"] != "signed":
+                    raise SigningError("store the completed previous contract before replacing it")
+            elif envelope.get("status") == "CANCELLED" and not all(person.get("signingStatus") == "SIGNED" for person in envelope.get("recipients", [])):
+                conn.execute("UPDATE signing_revisions SET state = 'cancelled', updated_at = ? WHERE id = ?", (store.now_iso(), prior["id"]))
+                conn.commit()
+            else:
+                raise SigningError("could not confirm old links are inactive; check and resume before creating a replacement")
+        # Apply approved terms only after older links are confirmed inactive.
+        if not same_terms:
+            fresh_order = store.get_order(conn, revision["order_id"])
+            keys = ("clubName", "eventDate", "rentalPrice", "depositAmount", "snapshot")
+            if not all(fresh_order[key] == baseline[key] for key in keys[:-1]) or store._terms(fresh_order["snapshot"]) != store._terms(baseline["snapshot"]):
+                raise SigningError("saved terms changed during activation; inspect before resuming")
+            store.update_order(conn, revision["order_id"], {**{key: activation[key] for key in keys}, "expectedUpdatedAt": fresh_order["updatedAt"]}, activation_revision_id=revision_id)
+            order = store.get_order(conn, revision["order_id"])
+        _assert_order_terms(order, revision["payload"])
         # Atomic claim prevents concurrent clicks from issuing two envelopes.
-        claimed = conn.execute("UPDATE signing_revisions SET state = 'creating', updated_at = ? WHERE id = ? AND state = 'preview'",
+        claimed = conn.execute("UPDATE signing_revisions SET state = 'creating', updated_at = ? WHERE id = ? AND state = 'activating'",
                                (store.now_iso(), revision_id))
         conn.commit()
         if claimed.rowcount != 1:
@@ -426,7 +478,7 @@ def reconcile(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
 
 def _reconcile_locked(conn: sqlite3.Connection, revision_id: str) -> dict[str, Any]:
     revision = get(conn, revision_id)
-    if revision["state"] == "created":
+    if revision["state"] in ("activating", "created"):
         return _create_links_locked(conn, revision_id, revision["original_sha256"])
     if revision["state"] not in ("creating", "creation_uncertain"):
         return revision

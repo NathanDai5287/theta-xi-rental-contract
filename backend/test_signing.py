@@ -231,10 +231,29 @@ def test_revision_cancels_old_request_and_old_links(archive, monkeypatch):
     changed["price"] = "1600"
     second = signing.prepare(conn, order["id"], changed, "second-request-key-123")
     assert second["revision"] == 2 and second["state"] == "preview"
+    assert signing.get(conn, first["id"])["state"] == "awaiting_signatures"
+    assert fake.envelopes[first["envelope_id"]]["status"] == "PENDING"
+    assert store.get_order(conn, order["id"])["rentalPrice"] == 1400
+    with pytest.raises(signing.SigningError, match="confirm replacement"):
+        signing.create_links(conn, second["id"], second["original_sha256"])
+    assert fake.envelopes[first["envelope_id"]]["status"] == "PENDING"
+    saved = store.get_order(conn, order["id"])
+    activation = {"expectedUpdatedAt": saved["updatedAt"], "clubName": saved["clubName"],
+                  "eventDate": saved["eventDate"], "rentalPrice": 1600, "depositAmount": 300,
+                  "snapshot": {}, "replacesRevisionIds": [first["id"]]}
+    stale = {**activation, "expectedUpdatedAt": "unreviewed-version"}
+    with pytest.raises(signing.SigningError, match="order changed"):
+        signing.create_links(conn, second["id"], second["original_sha256"], stale)
+    assert fake.envelopes[first["envelope_id"]]["status"] == "PENDING"
+    active = signing.create_links(conn, second["id"], second["original_sha256"], activation)
+    assert active["state"] == "awaiting_signatures"
     assert signing.get(conn, first["id"])["state"] == "cancelled"
     assert fake.envelopes[first["envelope_id"]]["status"] == "CANCELLED"
     assert signing._path(first["id"], "original").exists()
     assert signing.prepare(conn, order["id"], changed, "second-request-key-123")["id"] == second["id"]
+    # A repeated activation succeeds without saving again or duplicating envelopes.
+    assert signing.create_links(conn, second["id"], second["original_sha256"], activation)["id"] == active["id"]
+    assert len(fake.created) == 2
 
 
 def test_completed_previous_request_is_archived_before_new_revision(archive, monkeypatch):
@@ -252,8 +271,104 @@ def test_completed_previous_request_is_archived_before_new_revision(archive, mon
     second = signing.prepare(conn, order["id"], changed, "completed-second-key-123")
     assert second["state"] == "preview"
     prior = signing.get(conn, first["id"])
-    assert prior["state"] == "signed"
-    assert prior["files"]["completed"] and prior["files"]["audit"]
+    assert prior["state"] == "awaiting_signatures"
+    # Merely reviewing a PDF must not synchronize or cancel the old request.
+    assert not prior["files"]["completed"] and not prior["files"]["audit"]
+    saved = store.get_order(conn, order["id"])
+    activation = {"expectedUpdatedAt": saved["updatedAt"], "clubName": saved["clubName"],
+                  "eventDate": saved["eventDate"], "rentalPrice": 1400, "depositAmount": 300,
+                  "snapshot": {}, "replacesRevisionIds": [first["id"]]}
+    signing.create_links(conn, second["id"], second["original_sha256"], activation)
+    prior = signing.get(conn, first["id"])
+    assert prior["state"] == "signed" and prior["files"]["completed"] and prior["files"]["audit"]
+
+
+def _replacement(archive, monkeypatch):
+    conn, order = archive
+    fake = FakeDocumenso()
+    monkeypatch.setattr(signing, "_documenso", fake)
+    first = signing.prepare(conn, order["id"], payload(True), "inert-first-request-123")
+    first = signing.create_links(conn, first["id"], first["original_sha256"])
+    changed = payload(True)
+    changed["price"] = "1600"
+    second = signing.prepare(conn, order["id"], changed, "inert-second-request-123")
+    saved = store.get_order(conn, order["id"])
+    activation = {"expectedUpdatedAt": saved["updatedAt"], "clubName": saved["clubName"], "eventDate": saved["eventDate"], "rentalPrice": 1600, "depositAmount": 300, "snapshot": {}, "replacesRevisionIds": [first["id"]]}
+    return conn, order, fake, first, second, activation
+
+
+def test_preview_cannot_unlock_live_order_terms(archive, monkeypatch):
+    conn, order, fake, first, second, _ = _replacement(archive, monkeypatch)
+    with pytest.raises(ValueError, match="approve"):
+        store.update_order(conn, order["id"], {"rentalPrice": 1550})
+    conn.rollback()
+    assert store.get_order(conn, order["id"])["rentalPrice"] == 1400
+    assert fake.envelopes[first["envelope_id"]]["status"] == "PENDING"
+    assert signing.get(conn, second["id"])["state"] == "preview"
+
+
+def test_failed_cancellation_never_activates_second_request(archive, monkeypatch):
+    conn, order, fake, first, second, activation = _replacement(archive, monkeypatch)
+    def ineffective(method, path, **kwargs):
+        if path == "/envelope/cancel":
+            return {"success": True}  # Provider did not actually cancel.
+        return fake(method, path, **kwargs)
+    monkeypatch.setattr(signing, "_documenso", ineffective)
+    with pytest.raises(signing.SigningError, match="old links are inactive"):
+        signing.create_links(conn, second["id"], second["original_sha256"], activation)
+    assert store.get_order(conn, order["id"])["rentalPrice"] == 1400
+    assert fake.envelopes[first["envelope_id"]]["status"] == "PENDING"
+    assert len(fake.created) == 1
+    assert signing.get(conn, second["id"])["state"] == "activating"
+    monkeypatch.setattr(signing, "_documenso", fake)
+    assert signing.reconcile(conn, second["id"])["state"] == "awaiting_signatures"
+    assert len(fake.created) == 2
+
+
+def test_interrupted_activation_preserves_order_and_resumes_exact_approval(archive, monkeypatch):
+    conn, order, fake, first, second, activation = _replacement(archive, monkeypatch)
+    def offline(method, path, **kwargs):
+        if path == f"/envelope/{first['envelope_id']}":
+            raise signing.SigningError("controlled provider outage", 503)
+        return fake(method, path, **kwargs)
+    monkeypatch.setattr(signing, "_documenso", offline)
+    with pytest.raises(signing.SigningError, match="controlled provider outage"):
+        signing.create_links(conn, second["id"], second["original_sha256"], activation)
+    assert store.get_order(conn, order["id"])["rentalPrice"] == 1400
+    assert fake.envelopes[first["envelope_id"]]["status"] == "PENDING"
+    # Non-contract notes may change while provider access is interrupted.
+    store.update_order(conn, order["id"], {"notes": "Retain this independent note"})
+    monkeypatch.setattr(signing, "_documenso", fake)
+    result = signing.create_links(conn, second["id"], second["original_sha256"], activation)
+    assert result["state"] == "awaiting_signatures" and len(fake.created) == 2
+    saved = store.get_order(conn, order["id"])
+    assert saved["rentalPrice"] == 1600 and saved["notes"] == "Retain this independent note"
+
+
+def test_signatures_sealing_are_never_cancelled(archive, monkeypatch):
+    conn, order, fake, first, second, activation = _replacement(archive, monkeypatch)
+    envelope = fake.envelopes[first["envelope_id"]]
+    for person in envelope["recipients"]:
+        person["signingStatus"] = "SIGNED"
+    with pytest.raises(signing.SigningError, match="everyone has signed"):
+        signing.create_links(conn, second["id"], second["original_sha256"], activation)
+    assert envelope["status"] == "PENDING" and len(fake.created) == 1
+    assert store.get_order(conn, order["id"])["rentalPrice"] == 1400
+    envelope["status"] = "COMPLETED"
+    signing.reconcile(conn, second["id"])
+    prior = signing.get(conn, first["id"])
+    assert prior["state"] == "signed" and prior["files"]["completed"] and prior["files"]["audit"]
+    assert len(fake.created) == 2
+
+
+def test_activation_migration_preserves_existing_request(archive, monkeypatch):
+    conn, order, fake, first, _, _ = _replacement(archive, monkeypatch)
+    conn.execute("ALTER TABLE signing_revisions DROP COLUMN approved_order_patch")
+    conn.commit()
+    store.init_db()
+    assert "approved_order_patch" in {row[1] for row in conn.execute("PRAGMA table_info(signing_revisions)")}
+    assert signing.get(conn, first["id"])["state"] == "awaiting_signatures"
+    assert fake.envelopes[first["envelope_id"]]["status"] == "PENDING"
 
 
 @pytest.mark.parametrize("provider_status", ["DRAFT", "PENDING"])

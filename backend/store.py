@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS signing_revisions (
     recipients TEXT NOT NULL DEFAULT '[]',
     item_id TEXT,
     error TEXT,
+    approved_order_patch TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(order_id, revision)
@@ -152,6 +153,8 @@ def init_db(path: str | None = None) -> None:
             conn.execute("ALTER TABLE orders ADD COLUMN deleted_at TEXT")
         if "source_snapshot" not in {row[1] for row in conn.execute("PRAGMA table_info(documents)")}:
             conn.execute("ALTER TABLE documents ADD COLUMN source_snapshot TEXT")
+        if "approved_order_patch" not in {row[1] for row in conn.execute("PRAGMA table_info(signing_revisions)")}:
+            conn.execute("ALTER TABLE signing_revisions ADD COLUMN approved_order_patch TEXT")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_order_document_context ON orders(json_extract(snapshot, '$.documentContextId')) WHERE json_extract(snapshot, '$.documentContextId') IS NOT NULL AND json_extract(snapshot, '$.documentContextId') != ''")
         conn.commit()
         _protect_db_files(target)
@@ -646,7 +649,7 @@ def _raise(msg: str) -> Any:
     raise ValueError(msg)
 
 
-def update_order(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str, Any] | None:
+def update_order(conn: sqlite3.Connection, order_id: str, body: Any, *, activation_revision_id: str | None = None) -> dict[str, Any] | None:
     """Partial update. Only keys present in `body` are touched.
 
     `statusOverride` is legitimately nullable ("derive it"), so presence is
@@ -679,8 +682,16 @@ def update_order(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str
             raise ValueError("document owner cannot change between orders")
         body = {**body, "snapshot": new_snapshot}
 
-    latest = conn.execute("SELECT state FROM signing_revisions WHERE order_id = ? ORDER BY revision DESC LIMIT 1", (order_id,)).fetchone()
-    if latest and latest["state"] in ("awaiting_signatures", "preparing_completed_copy", "signed"):
+    protected = conn.execute("SELECT 1 FROM signing_revisions WHERE order_id = ? AND state IN ('awaiting_signatures', 'preparing_completed_copy', 'signed', 'activating', 'creating', 'created', 'creation_uncertain')", (order_id,)).fetchone()
+    approved_activation = False
+    if activation_revision_id:
+        revision = conn.execute("SELECT state, approved_order_patch FROM signing_revisions WHERE id = ? AND order_id = ?", (activation_revision_id, order_id)).fetchone()
+        if revision and revision["state"] == "activating" and revision["approved_order_patch"]:
+            approved = json.loads(revision["approved_order_patch"])
+            approved_activation = all(body.get(key) == approved.get(key) for key in ("clubName", "eventDate", "rentalPrice", "depositAmount")) and _terms(body.get("snapshot", {})) == _terms(approved.get("snapshot", {}))
+        if not approved_activation:
+            raise ValueError("order update does not match the explicitly approved signing revision")
+    if protected and not approved_activation:
         columns = {"clubName": "club_name", "eventDate": "event_date",
                    "rentalPrice": "rental_price", "depositAmount": "deposit_amount"}
         changed = any(key in body and body[key] != current[column] for key, column in columns.items())
@@ -694,7 +705,7 @@ def update_order(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str
                              "chapterSignerEmail", "contractPresign")
             changed = changed or any(old.get(key) != new.get(key) for key in contract_keys)
         if changed:
-            raise ValueError("prepare a new contract revision before changing signed or pending terms")
+            raise ValueError("prepare a new contract revision and approve its links before changing signed or pending terms")
 
     set_clauses: list[str] = []
     params: list[Any] = []
@@ -751,7 +762,7 @@ def add_document(conn: sqlite3.Connection, order_id: str, body: Any) -> dict[str
         return None
     doc = _validate_document_input(body)
     if doc["kind"] == "contract" and conn.execute(
-        "SELECT 1 FROM signing_revisions WHERE order_id = ? AND state IN ('awaiting_signatures', 'preparing_completed_copy', 'signed') LIMIT 1",
+        "SELECT 1 FROM signing_revisions WHERE order_id = ? AND state IN ('awaiting_signatures', 'preparing_completed_copy', 'signed', 'activating', 'creating', 'created', 'creation_uncertain') LIMIT 1",
         (order_id,),
     ).fetchone():
         raise ValueError("contract documents with signing history cannot be replaced; prepare a new revision")

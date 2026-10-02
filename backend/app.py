@@ -317,7 +317,8 @@ def create_signing_links(order_id: str, revision_id: str):
     revision = signing.get(store.get_conn(), revision_id)
     if not revision or revision["order_id"] != order_id:
         return jsonify(error="not_found"), 404
-    created = signing.create_links(store.get_conn(), revision_id, _json_body().get("approvedSha256"))
+    body = _json_body()
+    created = signing.create_links(store.get_conn(), revision_id, body.get("approvedSha256"), body.get("activation"))
     return jsonify(revision=created)
 
 
