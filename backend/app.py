@@ -43,6 +43,7 @@ from werkzeug.exceptions import HTTPException
 
 import store
 import signing
+from payment_terms import rental_payment_timing
 from generators import generate_contract, generate_credit_memo, generate_invoice
 from generators.base import (
     TypstCompileError,
@@ -189,7 +190,11 @@ def contract():
     payload = _generation_payload("contract")
     pdf = generate_contract(payload)
     club = slug(str(payload.get("club_name", "partner")))
-    return _pdf_response(pdf, f"theta_xi_{club}_contract.pdf")
+    response = _pdf_response(pdf, f"theta_xi_{club}_contract.pdf")
+    terms = rental_payment_timing(payload)
+    if terms is not None:
+        response.headers["X-Rental-Payment-Timing"] = terms
+    return response
 
 
 def _invoice_route(kind: str):

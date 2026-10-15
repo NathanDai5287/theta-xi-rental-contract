@@ -22,6 +22,7 @@ from typing import Any
 import requests
 
 import store
+from payment_terms import ADVANCE_PAYMENT_TIMING
 from generators.contract import _resolve_clubs, _signing_representatives, generate_contract, signing_field_pages
 
 SIGNING_TIMEZONE = "America/Los_Angeles"
@@ -99,6 +100,9 @@ def _row(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     result["signedCount"] = sum(p.get("status") == "SIGNED" for p in result["recipients"])
     result["totalCount"] = len(result["signers"])
     result["files"] = {key: _path(result["id"], key).exists() for key in ("original", "completed", "audit")}
+    terms = result["payload"].get("rental_payment_timing")
+    if terms is not None:
+        result["rentalPaymentTiming"] = terms
     return result
 
 
@@ -210,7 +214,15 @@ def _prepare_locked(conn: sqlite3.Connection, order_id: str, payload: dict, requ
     if expected_latest_id is not None and (not isinstance(expected_latest_id, str) or expected_latest_id != (latest["id"] if latest else "")):
         raise SigningError("signing history changed elsewhere; reload this order before preparing a new contract")
     if not latest:
-        _assert_order_terms(order, payload)
+        # An unissued draft may adopt the new payment policy in its inert
+        # preview. Persist it only on explicit activation, never by migration.
+        candidate = order
+        if (payload.get("rental_payment_timing") == ADVANCE_PAYMENT_TIMING
+                and order["snapshot"].get("rentalPaymentTiming") in (None, "after_conclusion")
+                and not any(doc["kind"] == "contract" for doc in order["documents"])):
+            candidate = {**order, "snapshot": {**order["snapshot"],
+                          "rentalPaymentTiming": ADVANCE_PAYMENT_TIMING}}
+        _assert_order_terms(candidate, payload)
     if latest and latest["payload_hash"] == digest and latest["state"] not in ("cancelled", "failed"):
         return _row(conn, latest)
     if conn.execute("SELECT 1 FROM signing_revisions WHERE order_id = ? AND state IN ('activating', 'creating', 'creation_uncertain', 'created', 'preparing_completed_copy')", (order_id,)).fetchone():

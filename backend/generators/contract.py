@@ -28,6 +28,7 @@ from pypdf import PdfReader
 import fitz
 
 from .base import english_list, normalize_org_name, render_typst, typst_string
+from payment_terms import ADVANCE_PAYMENT_TIMING, rental_payment_timing
 
 
 # (key, placeholder, prompt_label, hint)
@@ -75,6 +76,7 @@ class ContractInput(TypedDict, total=False):
     sound_system: bool
     lighting_system: bool
     sign: bool
+    rental_payment_timing: str      # absent means the original post-event deadline
     signers: list[dict[str, str]]
 
 
@@ -373,6 +375,24 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         # agreed maximum is higher — then that number is the cap everywhere.
         "«HARD_CAP»":     str(max(200, max_guests_num)),
     }
+
+    # Missing policy markers preserve archived payloads and their wording.
+    advance_payment = rental_payment_timing(values) == ADVANCE_PAYMENT_TIMING
+    repl["«RENTAL_PAYMENT_DEADLINE»"] = (
+        "The full rental fee is due by 11:59 p.m. Pacific Time "
+        "(America/Los_Angeles, observing daylight saving time) on the calendar "
+        "day immediately before the event date."
+        if advance_payment else
+        "The full rental fee is due within 2 days after the conclusion of the event."
+    )
+    repl["«DEPOSIT_RETURN_TIMING»"] = (
+        "After the event concludes and upon receipt of the full rental fee"
+        if advance_payment else "Upon receipt of the full rental fee"
+    )
+    repl["«RENTAL_LATE_PAYMENT_TRIGGER»"] = (
+        "by the deadline specified in Section 02"
+        if advance_payment else "within 2 days after the event"
+    )
 
     # ── Raw-markup substitutions. Built from fixed strings, computed
     #    numbers, and #TERM references — never from raw user input. ──

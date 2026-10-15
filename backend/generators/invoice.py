@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from typing import Any, Literal
+from payment_terms import ADVANCE_PAYMENT_TIMING, rental_payment_timing
 
 from .base import (
     fmt_currency,
@@ -40,7 +41,7 @@ def _parse_amount(v: Any) -> float:
     return f
 
 
-def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
+def _terms_block(kind: InvoiceKind, hard_cap: int = 200, timing: str = "after_conclusion") -> str:
     """
     Returns typst markup for the kind-specific terms section(s).
 
@@ -51,6 +52,21 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
     party named in the Bill To block): repeating a long multi-org list
     several times can push the details page past one page.
     """
+    advance = timing == ADVANCE_PAYMENT_TIMING
+    late_payment = (
+        "by 11:59 p.m. Pacific Time on the calendar day immediately before the event date"
+        if advance else "within 2 days following the event"
+    )
+    payment_due = (
+        "Payment is due in full by 11:59 p.m. Pacific Time "
+        "(America/Los_Angeles, observing daylight saving time) on the calendar "
+        "day immediately before the event date,"
+        if advance else "Payment is due in full within 2 days following the conclusion of the event,"
+    )
+    deposit_return = (
+        "After the event concludes and upon receipt of the full rental fee"
+        if advance else "Upon receipt of the full rental fee following the event"
+    )
     if kind == "deposit":
         return (
             '#section("02", "Security Deposit Terms")\n'
@@ -60,7 +76,7 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
             '#subclause("2a.")[The security deposit must be received in full no later than '
             '7 days before the event date. If the deposit is not received by that time, '
             'Theta Xi Fraternity may cancel the event under the Hosting Contract.]\n\n'
-            '#subclause("2b.")[Upon receipt of the full rental fee following the event, '
+            f'#subclause("2b.")[{deposit_return}, '
             'and provided no breach of the Hosting Contract has occurred, the security '
             'deposit will be returned to the Organization via a credit memo issued by Theta Xi '
             'Fraternity.]\n\n'
@@ -79,8 +95,7 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
             'of the Fraternity House (Subclause 3a).]\n\n'
             '#subclause("3d.")[Unauthorized access to restricted or prohibited areas '
             'of the Fraternity House (Section 07).]\n\n'
-            '#subclause("3e.")[Failure to remit the rental fee within 2 days following '
-            'the event (Subclause 2a).]\n\n'
+            f'#subclause("3e.")[Failure to remit the rental fee {late_payment} (Subclause 2a).]\n\n'
             '#subclause("3f.")[Breach of any other term or condition outlined in the '
             'Hosting Contract (Section 08).]\n\n'
             'The security deposit is a separate obligation from the rental fee. Forfeiture '
@@ -90,12 +105,11 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200) -> str:
     return (
         '#section("02", "Rental Fee Terms")\n'
         'This invoice represents the full rental fee for use of the Theta Xi Fraternity '
-        'House. Payment is due in full within 2 days following the conclusion of the '
-        'event, in accordance with Section 02 of the Hosting Contract.\n\n'
+        f'House. {payment_due} in accordance with Section 02 of the Hosting Contract.\n\n'
         '#subclause("2a.")[Partial payment does not constitute settlement; the full '
         'rental fee remains due regardless of any amount remitted.]\n\n'
-        '#subclause("2b.")[Failure to remit the rental fee within 2 days following the '
-        'event entitles Theta Xi Fraternity to retain the security deposit in addition '
+        f'#subclause("2b.")[Failure to remit the rental fee {late_payment} '
+        'entitles Theta Xi Fraternity to retain the security deposit in addition '
         'to pursuing collection of the outstanding rental fee.]\n\n'
         '#subclause("2c.")[The Organization shall be liable for all reasonable costs incurred by '
         'Theta Xi Fraternity in pursuing collection of any outstanding balance, '
@@ -168,6 +182,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
 
     Returns (pdf_bytes, invoice_number).
     """
+    timing = rental_payment_timing(values)
     kind = values.get("kind")
     if kind not in ("deposit", "rental"):
         raise ValueError("kind must be 'deposit' or 'rental'")
@@ -180,6 +195,8 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
     event_date  = str(values["event_date"]).strip()
     issue_date  = str(values["issue_date"]).strip()
     due_date    = str(values["due_date"]).strip()
+    if timing == ADVANCE_PAYMENT_TIMING and kind == "rental" and "11:59" not in due_date:
+        due_date += " at 11:59 p.m. Pacific Time"
 
     invoice_number = _generate_invoice_number(
         kind, club, event_date, values.get("invoice_number")
@@ -228,7 +245,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         due_label      = "Due Before"
     else:
         doc_kind_label = "RENTAL INVOICE"
-        doc_subtitle   = "Rental Fee · Due 2 Days After Event"
+        doc_subtitle   = "Rental Fee · Due Before Event" if timing == ADVANCE_PAYMENT_TIMING else "Rental Fee · Due 2 Days After Event"
         due_label      = "Due Date"
 
     treasurer_name = str(values.get("treasurer_name") or "").strip()
@@ -258,7 +275,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         "«LINE_ITEMS»":         _format_line_items(rows),
         "«TOTAL_AMOUNT_FMT»":   typst_string(total_fmt),
         "«TREASURER_PHRASE»":   typst_string(_treasurer_phrase(treasurer_name)),
-        "«TERMS_BLOCK»":        _terms_block(kind, hard_cap),
+        "«TERMS_BLOCK»":        _terms_block(kind, hard_cap, timing),
     }
 
     pdf = render_typst("invoice.typ", repl)

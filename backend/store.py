@@ -329,6 +329,9 @@ def document_receipt(kind, payload, source, filename):
     return hmac.new(key.encode(), message, hashlib.sha256).hexdigest()
 
 def assert_contract_snapshot(payload, snapshot):
+    from payment_terms import rental_payment_timing, snapshot_payment_timing
+    if rental_payment_timing(payload) != snapshot_payment_timing(snapshot):
+        raise ValueError("contract payment deadline does not match approved terms")
     for field, key in (("guest_list", "guestList"), ("sound_system", "soundSystem"), ("lighting_system", "lightingSystem"), ("sign", "contractPresign")):
         if key in snapshot and payload.get(field, False) != snapshot[key]:
             raise ValueError("contract options do not match approved terms")
@@ -354,6 +357,10 @@ def assert_contract_snapshot(payload, snapshot):
 
 def _validate_document_owner(doc, snapshot, club_name, event_date, verify_receipt=False, current_read=False):
     payload = doc["payload"]
+    if doc["kind"] in ("deposit_invoice", "rental_invoice"):
+        from payment_terms import rental_payment_timing, snapshot_payment_timing
+        if rental_payment_timing(payload) != snapshot_payment_timing(snapshot):
+            raise ValueError("invoice payment timing does not match approved terms")
     listed = _clubs_display(payload["club_names"]) if isinstance(payload.get("club_names"), list) else ""
     fallback = payload.get("club_name", "")
     if not isinstance(fallback, str):
@@ -703,6 +710,8 @@ def update_order(conn: sqlite3.Connection, order_id: str, body: Any, *, activati
                              "lightingSystem", "pricingSelections", "finalPrice", "overrides",
                              "pricingBreakdown", "rentalPrice", "contractSigners", "chapterSignerName",
                              "chapterSignerEmail", "contractPresign")
+            from payment_terms import snapshot_payment_timing
+            changed = changed or snapshot_payment_timing(old) != snapshot_payment_timing(new)
             changed = changed or any(old.get(key) != new.get(key) for key in contract_keys)
         if changed:
             raise ValueError("prepare a new contract revision and approve its links before changing signed or pending terms")
