@@ -191,6 +191,7 @@ def contract():
     pdf = generate_contract(payload)
     club = slug(str(payload.get("club_name", "partner")))
     response = _pdf_response(pdf, f"theta_xi_{club}_contract.pdf")
+    response.headers["X-Shutdown-Payment-Required"] = "true" if payload.get("shutdown_payment_required") is True else "false"
     terms = rental_payment_timing(payload)
     if terms is not None:
         response.headers["X-Rental-Payment-Timing"] = terms

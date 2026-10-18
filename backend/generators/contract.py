@@ -378,6 +378,7 @@ def generate_contract(values: dict[str, Any]) -> bytes:
 
     # Missing policy markers preserve archived payloads and their wording.
     advance_payment = rental_payment_timing(values) == ADVANCE_PAYMENT_TIMING
+    repl["«SHUTDOWN_PAYMENT_REQUIRED»"] = "true" if values.get("shutdown_payment_required") is True else "false"
     repl["«RENTAL_PAYMENT_DEADLINE»"] = (
         "The full rental fee is due by 11:59 p.m. Pacific Time "
         "(America/Los_Angeles, observing daylight saving time) on the calendar "

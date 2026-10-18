@@ -52,6 +52,29 @@ def test_contract_policy_must_match_snapshot():
     store.assert_contract_snapshot({"rental_payment_timing": ADVANCE_PAYMENT_TIMING}, {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING})
 
 
+def test_shutdown_payment_only_appears_in_new_contracts(client, auth_headers):
+    legacy = client.post("/api/generate/contract", json=_contract_payload(), headers=auth_headers)
+    current = client.post("/api/generate/contract", json=_contract_payload(shutdown_payment_required=True), headers=auth_headers)
+    archived = client.post("/api/generate/contract", json=_contract_payload(), headers=auth_headers)
+    assert legacy.status_code == current.status_code == archived.status_code == 200
+    assert current.headers["X-Shutdown-Payment-Required"] == "true"
+    assert legacy.headers["X-Shutdown-Payment-Required"] == "false"
+    assert "An early shutdown does not reduce the rental fee" in text(current.data)
+    assert "Any unpaid rental fee remains due" in text(current.data)
+    assert "An early shutdown" not in text(legacy.data)
+    assert text(archived.data) == text(legacy.data)
+
+
+def test_shutdown_payment_must_match_approved_terms():
+    store.assert_contract_snapshot({}, {})
+    store.assert_contract_snapshot({"shutdown_payment_required": False}, {})
+    store.assert_contract_snapshot({"shutdown_payment_required": True}, {"shutdownPaymentRequired": True})
+    with pytest.raises(ValueError, match="shutdown payment"):
+        store.assert_contract_snapshot({"shutdown_payment_required": True}, {})
+    with pytest.raises(ValueError, match="shutdown payment"):
+        store.assert_contract_snapshot({}, {"shutdownPaymentRequired": True})
+
+
 @pytest.mark.parametrize("completed", [False, True])
 def test_new_contract_preserves_pending_and_signed_contracts(archive, monkeypatch, completed):
     conn, old_order = archive
@@ -71,20 +94,26 @@ def test_new_contract_preserves_pending_and_signed_contracts(archive, monkeypatc
     before_files = {kind: signing._path(old["id"], kind).read_bytes()
                     for kind, exists in old["files"].items() if exists}
     new_order = store.create_order(conn, {"clubName": old_order["clubName"], "eventDate": old_order["eventDate"],
-        "rentalPrice": 1400, "depositAmount": 300, "snapshot": {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING}})
-    new = signing.prepare(conn, new_order["id"], {**payload(True), "rental_payment_timing": ADVANCE_PAYMENT_TIMING}, "preserve-new-key-123", "")
+        "rentalPrice": 1400, "depositAmount": 300, "snapshot": {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING, "shutdownPaymentRequired": True}})
+    new = signing.prepare(conn, new_order["id"], {**payload(True), "rental_payment_timing": ADVANCE_PAYMENT_TIMING, "shutdown_payment_required": True}, "preserve-new-key-123", "")
     assert new["rentalPaymentTiming"] == ADVANCE_PAYMENT_TIMING
+    assert new["shutdownPaymentRequired"] is True
+    assert old["shutdownPaymentRequired"] is False
     new = signing.create_links(conn, new["id"], new["original_sha256"])
     assert new["state"] == "awaiting_signatures"
     assert "11:59 p.m. Pacific Time" in text(signing._path(new["id"], "original").read_bytes())
+    assert "An early shutdown does not reduce the rental fee" in text(signing._path(new["id"], "original").read_bytes())
     assert store.get_order(conn, old_order["id"]) == before_order
     assert signing.get(conn, old["id"]) == before_revision
     for kind, content in before_files.items():
         assert signing._path(old["id"], kind).read_bytes() == content
     assert hashlib.sha256(before_files["original"]).hexdigest() == old["original_sha256"]
     assert "11:59 p.m. Pacific Time" not in text(before_files["original"])
+    assert "An early shutdown" not in text(before_files["original"])
     with pytest.raises(ValueError, match="new contract revision"):
         store.update_order(conn, old_order["id"], {"snapshot": {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING}})
+    with pytest.raises(ValueError, match="new contract revision"):
+        store.update_order(conn, old_order["id"], {"snapshot": {"shutdownPaymentRequired": True}})
 
 
 def test_unissued_draft_upgrades_only_on_explicit_activation(archive, monkeypatch):
