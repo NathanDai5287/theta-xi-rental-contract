@@ -116,6 +116,8 @@ Guests of #TERM are permitted to access the following designated areas of the Fr
 #section("08", "Termination of Agreement")
 In the event of a breach of any of the terms and conditions outlined in this Agreement, Theta Xi Fraternity reserves the right to terminate this Agreement, remove #TERM from the premises, and retain the security deposit.
 
+#subclause("8a.")[If the event is shut down before the scheduled end time, including by Theta Xi Fraternity, law enforcement, or other authorities, #TERM remains responsible for the full rental fee. An early shutdown does not reduce the rental fee or entitle #TERM to a refund of any rental fee paid. Any unpaid rental fee remains due by the payment deadline in Section 02.]
+
 #section("09", "Governing Law")
 This Agreement is governed by the laws of the State of California, and any disputes arising from this Agreement will be resolved under applicable state laws.
 
