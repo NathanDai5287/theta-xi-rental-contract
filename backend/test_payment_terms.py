@@ -94,11 +94,13 @@ def test_new_contract_preserves_pending_and_signed_contracts(archive, monkeypatc
     before_files = {kind: signing._path(old["id"], kind).read_bytes()
                     for kind, exists in old["files"].items() if exists}
     new_order = store.create_order(conn, {"clubName": old_order["clubName"], "eventDate": old_order["eventDate"],
-        "rentalPrice": 1400, "depositAmount": 300, "snapshot": {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING, "shutdownPaymentRequired": True}})
-    new = signing.prepare(conn, new_order["id"], {**payload(True), "rental_payment_timing": ADVANCE_PAYMENT_TIMING, "shutdown_payment_required": True}, "preserve-new-key-123", "")
+        "rentalPrice": 1400, "depositAmount": 300, "snapshot": {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING, "shutdownPaymentRequired": True, "depositReturnTiming": "two_business_days"}})
+    new = signing.prepare(conn, new_order["id"], {**payload(True), "rental_payment_timing": ADVANCE_PAYMENT_TIMING, "shutdown_payment_required": True, "deposit_return_timing": "two_business_days"}, "preserve-new-key-123", "")
     assert new["rentalPaymentTiming"] == ADVANCE_PAYMENT_TIMING
     assert new["shutdownPaymentRequired"] is True
+    assert new["depositReturnTiming"] == "two_business_days"
     assert old["shutdownPaymentRequired"] is False
+    assert old["depositReturnTiming"] is None
     new = signing.create_links(conn, new["id"], new["original_sha256"])
     assert new["state"] == "awaiting_signatures"
     assert "11:59 p.m. Pacific Time" in text(signing._path(new["id"], "original").read_bytes())
@@ -114,6 +116,8 @@ def test_new_contract_preserves_pending_and_signed_contracts(archive, monkeypatc
         store.update_order(conn, old_order["id"], {"snapshot": {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING}})
     with pytest.raises(ValueError, match="new contract revision"):
         store.update_order(conn, old_order["id"], {"snapshot": {"shutdownPaymentRequired": True}})
+    with pytest.raises(ValueError, match="new contract revision"):
+        store.update_order(conn, old_order["id"], {"snapshot": {**before_order["snapshot"], "depositReturnTiming": "two_business_days"}})
 
 
 def test_unissued_draft_upgrades_only_on_explicit_activation(archive, monkeypatch):
