@@ -150,3 +150,28 @@ def test_invoice_terms_follow_payment_timing(kind):
         assert "Rental Fee · Due Before Event" in current
         assert "October 15, 2026 at 11:59 p.m. Pacific Time" in current
         assert "America/Los_Angeles, observing daylight saving time" in current
+
+
+def test_deposit_return_deadline_is_explicit_and_preserves_legacy_pdf(client, auth_headers):
+    old = _contract_payload(rental_payment_timing=ADVANCE_PAYMENT_TIMING)
+    current = {**old, "deposit_return_timing": "two_business_days"}
+    legacy_text = text(generate_contract(old))
+    response = client.post("/api/generate/contract", json=current, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["X-Deposit-Return-Timing"] == "two_business_days"
+    assert "Within 2 business days (Monday through Friday) after the event concludes and the full rental fee is received, whichever occurs later" in text(response.data)
+    assert "2 business days" not in legacy_text
+    assert text(generate_contract(old)) == legacy_text
+    store.assert_contract_snapshot(current, {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING, "depositReturnTiming": "two_business_days"})
+    with pytest.raises(ValueError, match="deposit return timing"):
+        store.assert_contract_snapshot(current, {"rentalPaymentTiming": ADVANCE_PAYMENT_TIMING})
+    with pytest.raises(ValueError, match="unknown deposit return timing"):
+        generate_contract({**old, "deposit_return_timing": "invalid"})
+
+
+def test_deposit_invoice_matches_return_deadline():
+    from generators.invoice import generate_invoice
+    invoice = {"kind": "deposit", "club_name": "Sample Club", "event_date": "October 16, 2026",
+               "issue_date": "October 1, 2026", "due_date": "October 9, 2026", "amount": 300,
+               "deposit_return_timing": "two_business_days"}
+    assert "Within 2 business days (Monday through Friday)" in text(generate_invoice(invoice)[0])

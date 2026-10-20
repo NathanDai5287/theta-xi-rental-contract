@@ -41,7 +41,7 @@ def _parse_amount(v: Any) -> float:
     return f
 
 
-def _terms_block(kind: InvoiceKind, hard_cap: int = 200, timing: str = "after_conclusion") -> str:
+def _terms_block(kind: InvoiceKind, hard_cap: int = 200, timing: str = "after_conclusion", return_timing: str | None = None) -> str:
     """
     Returns typst markup for the kind-specific terms section(s).
 
@@ -64,8 +64,12 @@ def _terms_block(kind: InvoiceKind, hard_cap: int = 200, timing: str = "after_co
         if advance else "Payment is due in full within 2 days following the conclusion of the event,"
     )
     deposit_return = (
+        "Within 2 business days (Monday through Friday) after the event concludes "
+        "and the full rental fee is received, whichever occurs later"
+        if return_timing == "two_business_days" else (
         "After the event concludes and upon receipt of the full rental fee"
         if advance else "Upon receipt of the full rental fee following the event"
+        )
     )
     if kind == "deposit":
         return (
@@ -275,7 +279,7 @@ def generate_invoice(values: dict[str, Any]) -> tuple[bytes, str]:
         "«LINE_ITEMS»":         _format_line_items(rows),
         "«TOTAL_AMOUNT_FMT»":   typst_string(total_fmt),
         "«TREASURER_PHRASE»":   typst_string(_treasurer_phrase(treasurer_name)),
-        "«TERMS_BLOCK»":        _terms_block(kind, hard_cap, timing),
+        "«TERMS_BLOCK»":        _terms_block(kind, hard_cap, timing, values.get("deposit_return_timing")),
     }
 
     pdf = render_typst("invoice.typ", repl)

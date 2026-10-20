@@ -99,6 +99,7 @@ def _row(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         person["sentAt"] = sent.get(person["email"].casefold())
     result["signedCount"] = sum(p.get("status") == "SIGNED" for p in result["recipients"])
     result["totalCount"] = len(result["signers"])
+    result["depositReturnTiming"] = result["payload"].get("deposit_return_timing")
     result["shutdownPaymentRequired"] = result["payload"].get("shutdown_payment_required") is True
     result["files"] = {key: _path(result["id"], key).exists() for key in ("original", "completed", "audit")}
     terms = result["payload"].get("rental_payment_timing")

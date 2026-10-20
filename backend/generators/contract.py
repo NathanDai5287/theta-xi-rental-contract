@@ -386,9 +386,16 @@ def generate_contract(values: dict[str, Any]) -> bytes:
         if advance_payment else
         "The full rental fee is due within 2 days after the conclusion of the event."
     )
+    return_timing = values.get("deposit_return_timing")
+    if return_timing not in (None, "two_business_days"):
+        raise ValueError("unknown deposit return timing")
     repl["«DEPOSIT_RETURN_TIMING»"] = (
+        "Within 2 business days (Monday through Friday) after the event concludes "
+        "and the full rental fee is received, whichever occurs later"
+        if return_timing == "two_business_days" else (
         "After the event concludes and upon receipt of the full rental fee"
         if advance_payment else "Upon receipt of the full rental fee"
+        )
     )
     repl["«RENTAL_LATE_PAYMENT_TRIGGER»"] = (
         "by the deadline specified in Section 02"

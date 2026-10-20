@@ -329,6 +329,8 @@ def document_receipt(kind, payload, source, filename):
     return hmac.new(key.encode(), message, hashlib.sha256).hexdigest()
 
 def assert_contract_snapshot(payload, snapshot):
+    if payload.get("deposit_return_timing") != snapshot.get("depositReturnTiming"):
+        raise ValueError("deposit return timing does not match the approved terms")
     from payment_terms import rental_payment_timing, snapshot_payment_timing
     if rental_payment_timing(payload) != snapshot_payment_timing(snapshot):
         raise ValueError("contract payment deadline does not match approved terms")
@@ -711,7 +713,7 @@ def update_order(conn: sqlite3.Connection, order_id: str, body: Any, *, activati
                              "maxGuests", "monitors", "areas", "cleared", "guestList", "soundSystem",
                              "lightingSystem", "pricingSelections", "finalPrice", "overrides",
                              "pricingBreakdown", "rentalPrice", "contractSigners", "chapterSignerName",
-                             "chapterSignerEmail", "contractPresign")
+                             "chapterSignerEmail", "contractPresign", "depositReturnTiming")
             from payment_terms import snapshot_payment_timing
             changed = changed or snapshot_payment_timing(old) != snapshot_payment_timing(new)
             changed = changed or (old.get("shutdownPaymentRequired") is True) != (new.get("shutdownPaymentRequired") is True)
