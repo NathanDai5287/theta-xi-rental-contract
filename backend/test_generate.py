@@ -737,7 +737,8 @@ def test_credit_memo_itemizes_deposit_deductions(client, auth_headers, deposit, 
     deduction = spans["Door casing and drywall repair"]
     subtotal = spans["Total retained"]
     assert opening["color"] != deduction["color"]
-    assert opening["bbox"][3] < spans["DEDUCTIONS"]["bbox"][1]
+    deductions_header = next(span for text, span in spans.items() if text.replace(" ", "") == "DEDUCTIONS")
+    assert opening["bbox"][3] < deductions_header["bbox"][1]
     assert not deduction["flags"] & 16
     assert subtotal["flags"] & 16
     assert spans["$180.00"]["flags"] & 16
