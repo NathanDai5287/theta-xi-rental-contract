@@ -729,6 +729,7 @@ def test_credit_memo_itemizes_deposit_deductions(client, auth_headers, deposit, 
         spans = {
             span["text"]: span
             for block in document[0].get_text("dict")["blocks"]
+            if block["type"] == 0
             for line in block["lines"]
             for span in line["spans"]
         }
