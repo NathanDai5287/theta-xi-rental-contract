@@ -714,10 +714,11 @@ def test_credit_memo_itemizes_deposit_deductions(client, auth_headers, deposit, 
         headers=auth_headers,
     )
     assert response.status_code == 200
+    assert response.headers["X-Deposit-Settlement"] == "itemized-v1"
     pages = _pdf_pages(response.data)
     assert len(pages) == 2
     for label in ("Original security deposit", "Door casing and drywall repair",
-                  "Toilet clearing and cleaning", "Total retained", "Remaining Refund", "DEP-SAMPLE"):
+                  "Toilet clearing and cleaning", "Total retained", "REMAINING REFUND", "DEP-SAMPLE"):
         assert label in pages[0]
     for amount in (deposit, 100, 80, 180, refund):
         assert f"${amount:,.2f}" in pages[0]
