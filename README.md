@@ -82,7 +82,7 @@ The server listens on `http://127.0.0.1:5000` and exposes:
 | `POST /api/generate/contract`         | `club_name, date, start_time, end_time, price, deposit, max_guests, monitors, areas, cleared, guest_list, sound_system, lighting_system, sign` |
 | `POST /api/generate/invoice/deposit`  | `club_name, event_date, amount, issue_date, due_date, [invoice_number]`       |
 | `POST /api/generate/invoice/rental`   | `club_name, event_date, amount, issue_date, due_date, [invoice_number]`       |
-| `POST /api/generate/credit-memo`      | `club_name, event_date, amount, issue_date, original_invoice, [memo_number, refund_method, refund_description]` |
+| `POST /api/generate/credit-memo`      | `club_name, event_date, amount, issue_date, original_invoice, [memo_number, refund_method, refund_description, deposit_amount, deductions]` |
 
 Each endpoint returns `application/pdf` with a `Content-Disposition` filename.
 
@@ -201,3 +201,12 @@ The archive adds `documents.source_snapshot` and a unique index on nonempty orde
 New document attachments require their approved source snapshot, the generator's `X-Document-Receipt`, and the reviewed `expectedUpdatedAt`. The receipt uses the existing server `ADMIN_KEY`; no new credential is required. Deploy the matching admin application at the same time. Unscoped legacy documents remain ledger/history records but are never regenerated as current PDFs. Exact signing originals/completed files remain authoritative. A signer-only update does not invalidate verified financial documents.
 
 Run `python -m pytest backend/test_document_isolation.py backend/test_orders.py backend/test_signing.py backend/test_signing_delete.py backend/test_generate.py -q` before rollout. These tests use temporary databases and controlled addresses; they do not contact live signers.
+
+
+### Itemized deposit settlements
+
+Credit memos accept `deposit_amount` and `deductions` containing `description` and positive `amount` values.
+The refund `amount` must equal the deposit less deductions and can be zero.
+The existing two-page template lists the deposit, each deduction, total retained, and remaining refund.
+Responses include `X-Deposit-Settlement: itemized-v1`; clients must check this header before sending an itemized settlement.
+A credit memo records the settlement and does not confirm payment.

@@ -224,7 +224,9 @@ def invoice_rental():
 def credit_memo():
     payload = _generation_payload("credit_memo")
     pdf, number = generate_credit_memo(payload)
-    return _pdf_response(pdf, f"{number}.pdf")
+    response = _pdf_response(pdf, f"{number}.pdf")
+    response.headers["X-Deposit-Settlement"] = "itemized-v1"
+    return response
 
 
 # ── Orders API ──────────────────────────────────────────────────────────

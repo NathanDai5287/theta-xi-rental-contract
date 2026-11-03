@@ -10,6 +10,9 @@
 #let ISSUE_DATE      = "«ISSUE_DATE»"
 #let EVENT_DATE      = "«EVENT_DATE»"
 #let ORIGINAL_INVOICE = "«ORIGINAL_INVOICE»"   // e.g. "DEP-2026-0317-PSD"
+#let SETTLEMENT_ROWS = («SETTLEMENT_ROWS»)
+#let HAS_DEDUCTIONS = «HAS_DEDUCTIONS»
+#let HAS_REFUND = «HAS_REFUND»
 #let REFUND_DESCRIPTION = "«REFUND_DESCRIPTION»"
 #let REFUND_AMOUNT_FMT  = "«REFUND_AMOUNT_FMT»"
 #let REFUND_METHOD   = "«REFUND_METHOD»"        // e.g. "Zelle to organization treasurer"
@@ -30,7 +33,7 @@
 #set text(size: 10pt, font: standard_fonts, fill: ink)
 #set par(justify: false, leading: 0.70em, spacing: 0.85em, first-line-indent: 0pt)
 
-#letterhead("CREDIT MEMO", "Security Deposit Refund", bottom_gap: 18pt)
+#letterhead("CREDIT MEMO", if HAS_DEDUCTIONS { "Security Deposit Settlement" } else { "Security Deposit Refund" }, bottom_gap: 18pt)
 
 // ---- Issued-to + memo metadata -------------------------------------
 #billing_block(
@@ -45,10 +48,8 @@
 
 // ---- Refund line item (rendered in green) --------------------------
 #line_items(
-  (
-    (REFUND_DESCRIPTION, "(" + REFUND_AMOUNT_FMT + ")"),
-  ),
-  "Refund Amount",
+  SETTLEMENT_ROWS,
+  if HAS_DEDUCTIONS { "Remaining Refund" } else { "Refund Amount" },
   REFUND_AMOUNT_FMT,
   total_color: accent_green,
 )
@@ -60,13 +61,21 @@
 
 // ---- Body ----------------------------------------------------------
 #section("01", "Refund Summary")
-Theta Xi Fraternity hereby issues this credit memo to #CLUB_NAME for the refund of the security deposit collected under invoice #ORIGINAL_INVOICE in connection with the event held on #EVENT_DATE. The amount referenced above will be returned in full.
+#if HAS_DEDUCTIONS [
+  This memo records the security deposit settlement for #CLUB_NAME and the event on #EVENT_DATE under invoice #ORIGINAL_INVOICE. The itemized costs above reduce the original deposit. The remaining refund appears on the first page.
+] else [
+  Theta Xi Fraternity hereby issues this credit memo to #CLUB_NAME for the refund of the security deposit collected under invoice #ORIGINAL_INVOICE in connection with the event held on #EVENT_DATE. The amount referenced above will be returned in full.
+]
 
 #section("02", "Refund Method")
-The refund will be issued via #REFUND_METHOD. Please allow up to 5 business days for the funds to be received. If the refund has not arrived within this window, contact #TREASURER_PHRASE with this memo number for follow-up.
+#if HAS_REFUND [
+  The refund will be issued via #REFUND_METHOD. Contact #TREASURER_PHRASE with this memo number for payment questions. This memo does not confirm payment.
+] else [
+  The full deposit was applied to the itemized costs. No refund remains. No payment is required to complete this settlement.
+]
 
 #section("03", "Acknowledgement")
-This credit memo confirms that all conditions of the Hosting Contract relating to the security deposit have been satisfied. No further obligation exists between the parties with respect to the deposit. Any unrelated outstanding balances under the Hosting Contract remain unaffected by this credit memo.
+This memo records the deposit amount, any deductions, and the remaining refund. It does not change unrelated balances under the Hosting Contract.
 
 // ---- Issued-by footer ----------------------------------------------
 #v(8pt)

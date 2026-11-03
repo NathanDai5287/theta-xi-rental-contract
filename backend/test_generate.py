@@ -692,3 +692,48 @@ def test_contract_house_name_always_full_and_capitalized(client, auth_headers):
     assert r.status_code == 200
     stripped = _pdf_text(r.data).replace("Theta Xi Fraternity", "")
     assert "theta xi" not in stripped.lower()
+
+
+@needs_typst
+@pytest.mark.parametrize("deposit,refund", [(500, 320), (180, 0)])
+def test_credit_memo_itemizes_deposit_deductions(client, auth_headers, deposit, refund):
+    response = client.post(
+        "/api/generate/credit-memo",
+        json={
+            "club_name": "Sample Club",
+            "event_date": "2026-10-30",
+            "amount": refund,
+            "deposit_amount": deposit,
+            "issue_date": "November 3, 2026",
+            "original_invoice": "DEP-SAMPLE",
+            "deductions": [
+                {"description": "Door casing and drywall repair", "amount": 100},
+                {"description": "Toilet clearing and cleaning", "amount": 80},
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    pages = _pdf_pages(response.data)
+    assert len(pages) == 2
+    for label in ("Original security deposit", "Door casing and drywall repair",
+                  "Toilet clearing and cleaning", "Total retained", "Remaining Refund", "DEP-SAMPLE"):
+        assert label in pages[0]
+    for amount in (deposit, 100, 80, 180, refund):
+        assert f"${amount:,.2f}" in pages[0]
+    assert "does not confirm payment" in pages[1] if refund else "No refund remains" in pages[1]
+
+
+@pytest.mark.parametrize("deposit,refund", [(500, 319), (100, 0)])
+def test_credit_memo_rejects_inconsistent_settlement(client, auth_headers, deposit, refund):
+    response = client.post(
+        "/api/generate/credit-memo",
+        json={
+            "club_name": "Sample Club", "event_date": "2026-10-30",
+            "issue_date": "2026-11-03", "original_invoice": "DEP-SAMPLE",
+            "amount": refund, "deposit_amount": deposit,
+            "deductions": [{"description": "Repair", "amount": 180}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 400

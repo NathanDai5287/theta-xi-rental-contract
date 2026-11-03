@@ -81,7 +81,7 @@ def generate_credit_memo(values: dict[str, Any]) -> tuple[bytes, str]:
     """
     required = ["club_name", "event_date", "amount", "issue_date", "original_invoice"]
     for k in required:
-        if not values.get(k):
+        if values.get(k) is None or str(values[k]).strip() == "":
             raise ValueError(f"missing required field: {k}")
 
     club             = normalize_org_name(str(values["club_name"]))
@@ -90,6 +90,30 @@ def generate_credit_memo(values: dict[str, Any]) -> tuple[bytes, str]:
     original_invoice = str(values["original_invoice"]).strip()
     amount           = _parse_amount(values["amount"])
     amount_fmt       = fmt_currency(amount)
+    deductions = values.get("deductions", [])
+    if not isinstance(deductions, list) or len(deductions) > 25:
+        raise ValueError("deductions must contain at most 25 items")
+    rows = []
+    total_deductions = 0.0
+    for item in deductions:
+        description = str(item.get("description") or "").strip()
+        deduction = _parse_amount(item.get("amount", ""))
+        if not description or deduction <= 0:
+            raise ValueError("each deduction needs a description and positive amount")
+        rows.append((description, fmt_currency(deduction)))
+        total_deductions += deduction
+    deposit_amount = _parse_amount(values.get("deposit_amount", amount))
+    if round((deposit_amount - total_deductions) * 100) != round(amount * 100):
+        raise ValueError("refund must equal the deposit less deductions")
+    if deductions:
+        rows = [("Original security deposit", fmt_currency(deposit_amount)), *rows,
+                ("Total retained", fmt_currency(total_deductions))]
+    else:
+        rows = [(str(values.get("refund_description") or f"Refund of security deposit for the event on {values['event_date']}"), f"({amount_fmt})")]
+    settlement_rows = ",".join(
+        f'("{typst_string(description)}", "{typst_string(value)}")'
+        for description, value in rows
+    ) + ","
 
     memo_number = _generate_memo_number(club, event_date, values.get("memo_number"))
     refund_method = (
@@ -103,6 +127,9 @@ def generate_credit_memo(values: dict[str, Any]) -> tuple[bytes, str]:
     treasurer_contact = str(values.get("treasurer_contact") or "").strip()
 
     repl: dict[str, str] = {
+        "«SETTLEMENT_ROWS»":    settlement_rows,
+        "«HAS_DEDUCTIONS»":     "true" if deductions else "false",
+        "«HAS_REFUND»":         "true" if amount > 0 else "false",
         "«CLUB_NAME»":          typst_string(club),
         "«MEMO_NUMBER»":        typst_string(memo_number),
         "«ISSUE_DATE»":         typst_string(issue_date),
