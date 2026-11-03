@@ -226,6 +226,7 @@ def credit_memo():
     pdf, number = generate_credit_memo(payload)
     response = _pdf_response(pdf, f"{number}.pdf")
     response.headers["X-Deposit-Settlement"] = "itemized-v1"
+    response.headers["X-Deposit-Settlement-Style"] = "hierarchy-v1"
     return response
 
 

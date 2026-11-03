@@ -11,6 +11,8 @@
 #let EVENT_DATE      = "«EVENT_DATE»"
 #let ORIGINAL_INVOICE = "«ORIGINAL_INVOICE»"   // e.g. "DEP-2026-0317-PSD"
 #let SETTLEMENT_ROWS = («SETTLEMENT_ROWS»)
+#let DEPOSIT_AMOUNT_FMT = "«DEPOSIT_AMOUNT_FMT»"
+#let TOTAL_RETAINED_FMT = "«TOTAL_RETAINED_FMT»"
 #let HAS_DEDUCTIONS = «HAS_DEDUCTIONS»
 #let HAS_REFUND = «HAS_REFUND»
 #let REFUND_DESCRIPTION = "«REFUND_DESCRIPTION»"
@@ -46,13 +48,49 @@
   ),
 )
 
-// ---- Refund line item (rendered in green) --------------------------
-#line_items(
-  SETTLEMENT_ROWS,
-  if HAS_DEDUCTIONS { "Remaining Refund" } else { "Refund Amount" },
-  REFUND_AMOUNT_FMT,
-  total_color: accent_green,
-)
+#if HAS_DEDUCTIONS {
+  v(8pt)
+  grid(
+    columns: (1fr, auto),
+    column-gutter: 16pt,
+    align: (left, right),
+    text(size: 9.5pt, fill: muted)[Original security deposit],
+    text(size: 12pt, weight: "semibold", fill: muted)[#DEPOSIT_AMOUNT_FMT],
+  )
+  v(18pt)
+  table(
+    columns: (1fr, auto),
+    column-gutter: 16pt,
+    align: (left, right),
+    inset: (x: 0pt, y: 6pt),
+    stroke: none,
+    table.header(
+      text(size: 8pt, weight: "bold", tracking: 1.2pt, fill: muted)[DEDUCTIONS],
+      text(size: 8pt, weight: "bold", tracking: 1.2pt, fill: muted)[AMOUNT],
+    ),
+    table.hline(stroke: 0.6pt + ink),
+    ..SETTLEMENT_ROWS.map(row => (
+      text(size: 10.5pt)[#row.at(0)],
+      text(size: 10.5pt)[#row.at(1)],
+    )).flatten(),
+    table.hline(stroke: 0.4pt + rule),
+    text(size: 10.5pt, weight: "bold")[Total retained],
+    text(size: 10.5pt, weight: "bold")[#TOTAL_RETAINED_FMT],
+  )
+  v(10pt)
+  line(length: 100%, stroke: 0.4pt + rule)
+  v(8pt)
+  grid(
+    columns: (1fr, auto),
+    align: (left, right),
+    text(size: 11pt, weight: "bold", tracking: 0.4pt)[REMAINING REFUND],
+    text(size: 16pt, weight: "bold", fill: accent_green, tracking: -0.3pt)[#REFUND_AMOUNT_FMT],
+  )
+  v(14pt)
+  line(length: 100%, stroke: 1.2pt + brand)
+} else {
+  line_items(SETTLEMENT_ROWS, "Refund Amount", REFUND_AMOUNT_FMT, total_color: accent_green)
+}
 
 // Refund details start on a fresh page so the memo summary above stands
 // alone — same layout contract as the invoices: page 1 numbers, page 2

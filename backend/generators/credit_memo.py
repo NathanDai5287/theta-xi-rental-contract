@@ -105,10 +105,7 @@ def generate_credit_memo(values: dict[str, Any]) -> tuple[bytes, str]:
     deposit_amount = _parse_amount(values.get("deposit_amount", amount))
     if round((deposit_amount - total_deductions) * 100) != round(amount * 100):
         raise ValueError("refund must equal the deposit less deductions")
-    if deductions:
-        rows = [("Original security deposit", fmt_currency(deposit_amount)), *rows,
-                ("Total retained", fmt_currency(total_deductions))]
-    else:
+    if not deductions:
         rows = [(str(values.get("refund_description") or f"Refund of security deposit for the event on {values['event_date']}"), f"({amount_fmt})")]
     settlement_rows = ",".join(
         f'("{typst_string(description)}", "{typst_string(value)}")'
@@ -128,6 +125,8 @@ def generate_credit_memo(values: dict[str, Any]) -> tuple[bytes, str]:
 
     repl: dict[str, str] = {
         "«SETTLEMENT_ROWS»":    settlement_rows,
+        "«DEPOSIT_AMOUNT_FMT»": typst_string(fmt_currency(deposit_amount)),
+        "«TOTAL_RETAINED_FMT»": typst_string(fmt_currency(total_deductions)),
         "«HAS_DEDUCTIONS»":     "true" if deductions else "false",
         "«HAS_REFUND»":         "true" if amount > 0 else "false",
         "«CLUB_NAME»":          typst_string(club),

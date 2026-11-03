@@ -24,6 +24,7 @@ HAS_TYPST = shutil.which("typst") is not None
 needs_typst = pytest.mark.skipif(not HAS_TYPST, reason="typst not installed")
 
 pypdf = pytest.importorskip("pypdf", reason="pypdf not installed")
+pymupdf = pytest.importorskip("pymupdf", reason="PyMuPDF not installed")
 
 
 @pytest.fixture()
@@ -715,6 +716,7 @@ def test_credit_memo_itemizes_deposit_deductions(client, auth_headers, deposit, 
     )
     assert response.status_code == 200
     assert response.headers["X-Deposit-Settlement"] == "itemized-v1"
+    assert response.headers["X-Deposit-Settlement-Style"] == "hierarchy-v1"
     pages = _pdf_pages(response.data)
     assert len(pages) == 2
     for label in ("Original security deposit", "Door casing and drywall repair",
@@ -723,6 +725,22 @@ def test_credit_memo_itemizes_deposit_deductions(client, auth_headers, deposit, 
     for amount in (deposit, 100, 80, 180, refund):
         assert f"${amount:,.2f}" in pages[0]
     assert "does not confirm payment" in pages[1] if refund else "No refund remains" in pages[1]
+    with pymupdf.open(stream=response.data, filetype="pdf") as document:
+        spans = {
+            span["text"]: span
+            for block in document[0].get_text("dict")["blocks"]
+            for line in block["lines"]
+            for span in line["spans"]
+        }
+    opening = spans["Original security deposit"]
+    deduction = spans["Door casing and drywall repair"]
+    subtotal = spans["Total retained"]
+    assert opening["color"] != deduction["color"]
+    assert opening["bbox"][3] < spans["DEDUCTIONS"]["bbox"][1]
+    assert not deduction["flags"] & 16
+    assert subtotal["flags"] & 16
+    assert spans["$180.00"]["flags"] & 16
+    assert spans[f"${refund:,.2f}"]["size"] > subtotal["size"]
 
 
 @pytest.mark.parametrize("deposit,refund", [(500, 319), (100, 0)])
